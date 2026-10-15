@@ -728,8 +728,8 @@ print_location (const char* step, HANDLE t, uint8_t* target, void* tramp)
  * the trampoline holds the loop, and the detour is the same loop. The
  * other thread spins in the detour and we place it, suspended, at the
  * relocated jmp in the trampoline (the second instruction boundary). A
- * failed patch leaves the hook enabled, so the thread must stay where it is
- * since the target's second boundary is within the hook's jump.
+ * failed patch leaves the hook enabled and the target's second boundary is
+ * within the hook's jump, so the thread must stay where it is.
  */
 static void
 protect_moved (void)
@@ -753,7 +753,7 @@ protect_moved (void)
   HANDLE t = CreateThread (NULL, 0, s, NULL, 0, NULL);
   assert (t != NULL);
 
-  /* Suspend the thread once it runs the loop, since a thread that is still
+  /* Suspend the thread once it runs the loop since a thread that is still
    * starting may hold a lock that printing needs.
    */
   for (;;)

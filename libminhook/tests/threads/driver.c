@@ -353,7 +353,7 @@ hot_patch (void)
   HANDLE t = start_spinning (p + DETOUR_OFFSET);
 
   /* Disabling all the hooks looks the thread up in the hot patch area
-   * first, where it isn't.
+   * first, where it is not.
    */
   step ("disable-all",   mh_disable_hook (MH_ALL_HOOKS), t, target, tramp);
   step ("enable",        mh_enable_hook (target),        t, target, tramp);

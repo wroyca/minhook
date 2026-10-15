@@ -267,8 +267,8 @@ $* protect-moved >>EOO
 
 : virtual-alloc
 :
-: Test that creating a hook on x64 allocates the trampoline block in the
-: next free region if one cannot be allocated and fails on x86.
+: Test that if allocating a trampoline block fails, then creating a hook
+: tries the next free region on x64 and fails on x86.
 :
 if ($c.target.cpu == 'x86_64')
 {

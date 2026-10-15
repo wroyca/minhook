@@ -21,9 +21,8 @@
  * the result of the original function. The page is followed by another
  * page, both filled with int3, which the library takes for padding.
  *
- * With --start the target is at the start of the second page instead, so
- * that the padding above it (the hot patch area) is at the end of the first
- * page.
+ * With --start the target is at the start of the second page, so that the
+ * padding above it (the hot patch area) is at the end of the first page.
  *
  * The page with the target is execute-read and the other page has the
  * protection, which is one of noaccess, readonly, execute-read, and

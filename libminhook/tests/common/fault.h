@@ -40,13 +40,13 @@ enum fault_function
   FAULT_COUNT
 };
 
-/* An import of the library that we redirect.
+/* Library import that we redirect.
  */
 struct fault_import
 {
   const char* name;
   FARPROC     wrapper;
-  FARPROC     function; /* The function that the import resolved to. */
+  FARPROC     function; /* Function that the import resolved to. */
   unsigned    skips;    /* Number of the next calls to pass on. */
   unsigned    failures; /* Number of the calls to fail after those. */
 };
@@ -101,7 +101,7 @@ fault_fail (enum fault_function f)
   return true;
 }
 
-/* The wrappers, each failing the way its function documents.
+/* Wrappers, each failing the way its function documents.
  */
 static HANDLE WINAPI
 fault_heap_create (DWORD o, SIZE_T i, SIZE_T m)
@@ -237,9 +237,9 @@ fault_redirect (void)
   /* Find the module through the address of one of the library's string
    * literals.
    *
-   * Note that the address of a library function won't do: without the
-   * dllimport declaration (see libminhook/export.h) it is that of the import
-   * thunk in the calling module.
+   * Note that the address of a library function won't do since without the
+   * dllimport declaration (see libminhook/export.h) it is the address of the
+   * import thunk in the calling module.
    */
   HMODULE m;
   {

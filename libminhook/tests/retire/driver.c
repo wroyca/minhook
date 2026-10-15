@@ -40,7 +40,8 @@
 
 typedef int target_function (void);
 
-/* Trampoline of the most recently created hook and the same as a function.
+/* Trampoline of the most recently created hook as a data and a function
+ * pointer.
  */
 static void*            tramp;
 static target_function* original;
@@ -208,7 +209,8 @@ uninitialized (void)
   code_free (p);
 }
 
-/* The callee that the target calls, which waits until it is released.
+/* Events of the target's callee, which signals entered and waits until
+ * released is signaled.
  */
 static HANDLE entered;
 static HANDLE released;

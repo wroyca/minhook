@@ -11,10 +11,10 @@
 #undef NDEBUG
 #include <assert.h>
 
-/* A page of executable memory for machine code that a test writes. The
- * page is filled with int3 (CC), which the library takes for padding. It
- * follows a page of the same content that is not executable, so that code
- * at the start of the page has padding above it that the library can't use.
+/* Page of executable memory for machine code that a test writes. The page
+ * is filled with int3 (CC), which the library takes for padding. It follows
+ * a non-executable page of the same content, so that code at the start of
+ * the page has padding above it that the library cannot use.
  */
 #define CODE_PAGE_SIZE 0x1000
 
