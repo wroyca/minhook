@@ -301,34 +301,30 @@ relocate (struct builder* b,
   return true;
 }
 
-/* Return true if the bytes are all the same padding byte (00, 90, or CC).
+/* Return true if the bytes are all the same padding byte (00, 90, or CC)
+ * in executable memory.
+ *
+ * Note that the bytes are next to the target function and may extend into
+ * the page before or after it, which may be data or not even readable. So
+ * we check the memory before reading it. The bytes span two pages at most,
+ * so they are all executable if the first and the last are.
  */
 static bool
-code_padding (const uint8_t* p, unsigned int n)
+padded (const uint8_t* p, size_t n)
 {
+  if (!mh_executable_address (p) || !mh_executable_address (p + n - 1))
+    return false;
+
   if (p[0] != 0x00 && p[0] != 0x90 && p[0] != 0xCC)
     return false;
 
-  for (unsigned int i = 1; i < n; ++i)
+  for (size_t i = 1; i < n; ++i)
   {
     if (p[i] != p[0])
       return false;
   }
 
   return true;
-}
-
-/* Return true if the target's bytes from the offset up to the size are
- * padding in executable memory. They follow the function and may be at the
- * start of the next page, which may be data or not even readable, so we
- * check the memory before reading it. The target is executable, so the
- * whole range is if its last byte is.
- */
-static bool
-target_padding (const uint8_t* p, unsigned int offset, unsigned int size)
-{
-  return mh_executable_address (p + size - 1) &&
-         code_padding (p + offset, size - offset);
 }
 
 bool
@@ -411,19 +407,16 @@ mh_create_trampoline (struct mh_trampoline* t)
    * patch area).
    */
   const uint8_t* p = (const uint8_t*) t->target;
+  size_t n = b.old_pos;
 
-  if (b.old_pos < sizeof (struct mh_jmp_rel) &&
-      !target_padding (p, b.old_pos, sizeof (struct mh_jmp_rel)))
+  if (n < sizeof (struct mh_jmp_rel) &&
+      !padded (p + n, sizeof (struct mh_jmp_rel) - n))
   {
-    if (b.old_pos < sizeof (struct mh_jmp_rel_short) &&
-        !target_padding (p, b.old_pos, sizeof (struct mh_jmp_rel_short)))
+    if (n < sizeof (struct mh_jmp_rel_short) &&
+        !padded (p + n, sizeof (struct mh_jmp_rel_short) - n))
       return false;
 
-    if (!mh_executable_address (p - sizeof (struct mh_jmp_rel)))
-      return false;
-
-    if (!code_padding (p - sizeof (struct mh_jmp_rel),
-                       sizeof (struct mh_jmp_rel)))
+    if (!padded (p - sizeof (struct mh_jmp_rel), sizeof (struct mh_jmp_rel)))
       return false;
 
     t->patch_above = true;
