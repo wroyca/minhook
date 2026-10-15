@@ -4,6 +4,6 @@ import libs = libminhook%lib{minhook}
 #
 ./: exe{driver}: include = ($c.target.cpu == 'x86_64')
 
-exe{driver}: {h c}{**} ../common/h{code} $libs testscript
+exe{driver}: {h c}{**} ../common/h{code fault} $libs testscript
 
 c.poptions =+ "-I$src_root"

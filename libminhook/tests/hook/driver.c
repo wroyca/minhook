@@ -1,9 +1,17 @@
+#ifndef WIN32_LEAN_AND_MEAN
+#  define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h> /* exit(), strtol() */
 #include <string.h> /* strcmp(), strcspn(), strtok() */
 
 #include <libminhook/minhook.h>
+
+#undef NDEBUG
+#include <assert.h>
 
 /* Usage: argv[0]
  *
@@ -24,7 +32,8 @@
  * original <function> <integer>
  *
  * Targets are the functions a and b, data (a data object), unmapped (an
- * address outside the address space), and all (MH_ALL_HOOKS). Detours are
+ * address outside the address space), reserved (a page of address space
+ * without memory), and all (MH_ALL_HOOKS). Detours are
  * named after the targets and default to the target's own: the detours of a
  * and b add 1000 and 2000, respectively, to the result of the target's
  * original function, while data and unmapped are the addresses above.
@@ -104,6 +113,7 @@ static struct name_entry targets[] = {
   {"b",        NULL,         &target_b, &original_b},
   {"data",     &data_object, NULL,      NULL},
   {"unmapped", NULL,         NULL,      NULL},
+  {"reserved", NULL,         NULL,      NULL},
   {"all",      MH_ALL_HOOKS, NULL,      NULL}};
 
 static struct name_entry detours[] = {
@@ -129,6 +139,8 @@ init_names (void)
   targets[0].address = address (&target_a);
   targets[1].address = address (&target_b);
   targets[3].address = UNMAPPED;
+  targets[4].address = VirtualAlloc (NULL, 0x1000, MEM_RESERVE, PAGE_NOACCESS);
+  assert (targets[4].address != NULL);
 
   detours[0].address = address (&detour_a);
   detours[1].address = address (&detour_b);

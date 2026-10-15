@@ -16,12 +16,41 @@ $* far >>EOO
   uninitialize MH_OK
   EOO
 
+: far-first
+:
+: Test that a target below the existing trampoline blocks gets a block of
+: its own.
+:
+$* far-first >>EOO
+  initialize MH_OK
+  create-far MH_OK
+  create-near MH_OK
+  enable-all MH_OK
+  call-far 1042
+  call-near 1042
+  uninitialize MH_OK
+  EOO
+
 : below
 :
 : Test that the trampoline is allocated above the target if there is no
 : room below it.
 :
 $* below >>EOO
+  initialize MH_OK
+  create MH_OK
+  above 1
+  enable MH_OK
+  call 1042
+  uninitialize MH_OK
+  EOO
+
+: below-retry
+:
+: Test that the trampoline is allocated in the next free region above the
+: target if allocating it in the first one fails.
+:
+$* below-retry >>EOO
   initialize MH_OK
   create MH_OK
   above 1
@@ -38,6 +67,31 @@ $* below >>EOO
 $* reserved >>EOO
   initialize MH_OK
   create MH_ERROR_MEMORY_ALLOC
+  uninitialize MH_OK
+  EOO
+
+: low
+:
+: Test a target whose range reaches down to the lowest address that the
+: system allocates.
+:
+$* low >>EOO
+  initialize MH_OK
+  create MH_OK
+  enable MH_OK
+  call 1042
+  uninitialize MH_OK
+  EOO
+
+: high
+:
+: Test a target whose range reaches past the end of the address space.
+:
+$* high >>EOO
+  initialize MH_OK
+  create MH_OK
+  enable MH_OK
+  call 1042
   uninitialize MH_OK
   EOO
 

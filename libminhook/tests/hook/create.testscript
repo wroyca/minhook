@@ -50,6 +50,20 @@
     MH_OK
     EOO
 
+  : reserved
+  :
+  : Test that a target in address space without memory is refused.
+  :
+  $* <<EOI >>EOO
+    initialize
+    create reserved a
+    uninitialize
+    EOI
+    MH_OK
+    MH_ERROR_NOT_EXECUTABLE
+    MH_OK
+    EOO
+
   : again
   :
   : Test that a target can only be hooked once, whatever the detour.

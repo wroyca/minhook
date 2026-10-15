@@ -43,6 +43,26 @@
     removed 7
     EOO
 
+  : nop-padding
+  :
+  $* 31 c0 c3 90 90 >>EOO
+    create MH_OK
+    plain 0
+    hooked 1000
+    restored 0
+    removed 0
+    EOO
+
+  : zero-padding
+  :
+  $* 31 c0 c3 00 00 >>EOO
+    create MH_OK
+    plain 0
+    hooked 1000
+    restored 0
+    removed 0
+    EOO
+
   : mixed-padding
   :
   : Test a function shorter than the hook's jump followed by bytes that are
@@ -107,6 +127,19 @@ $* e8 2b 00 00 00 c3 >>EOO
   : Test a jump within the code that the hook overwrites.
   :
   $* 31 c0 eb 00 b8 07 00 00 00 c3 >>EOO
+    create MH_OK
+    plain 7
+    hooked 1007
+    restored 7
+    removed 7
+    EOO
+
+  : internal-nested
+  :
+  : Test a jump within the code that the hook overwrites to the destination
+  : of a preceding conditional jump, which doesn't extend the branch.
+  :
+  $* 74 02 eb 00 b8 07 00 00 00 c3 >>EOO
     create MH_OK
     plain 7
     hooked 1007
@@ -194,6 +227,32 @@ $* e8 2b 00 00 00 c3 >>EOO
   : ret, which doesn't complete the function.
   :
   $* f8 73 01 c3 b8 07 00 00 00 c3 >>EOO
+    create MH_OK
+    plain 7
+    hooked 1007
+    restored 7
+    removed 7
+    EOO
+
+  : backward
+  :
+  : Test a conditional jump that is not taken to a destination before the
+  : target function.
+  :
+  $* 83 c8 01 74 e0 b8 07 00 00 00 c3 >>EOO
+    create MH_OK
+    plain 7
+    hooked 1007
+    restored 7
+    removed 7
+    EOO
+
+  : internal-nested
+  :
+  : Test a conditional jump within the code that the hook overwrites to the
+  : destination of a preceding jump, which doesn't extend the branch.
+  :
+  $* eb 02 74 00 b8 07 00 00 00 c3 >>EOO
     create MH_OK
     plain 7
     hooked 1007

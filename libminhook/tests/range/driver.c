@@ -1,10 +1,12 @@
 #include <stdio.h>
 #include <stdint.h>
-#include <string.h> /* strcmp(), memcpy() */
+#include <string.h>  /* strcmp(), memcpy(), memset() */
+#include <stdbool.h>
 
 #include <libminhook/minhook.h>
 
 #include <common/code.h>
+#include <common/fault.h>
 
 /* Usage: argv[0] <scenario>
  *
@@ -14,12 +16,19 @@
  * and print the outcome of each step on a line of its own. The scenarios
  * are:
  *
- * far       hook a function near the other code and then the far one
- * below     hook the far function with the address space below it reserved
- * reserved  hook the far function with the address space around it reserved
+ * far          hook a function near the other code and then the far one
+ * far-first    hook the far function and then one near the other code
+ * below        hook the far function with the address space below it
+ *              reserved
+ * below-retry  as below with the first trampoline block allocation failing
+ * reserved     hook the far function with the address space around it
+ *              reserved
+ * low          hook a function just above the first 1GB of the address
+ *              space
+ * high         hook a function within 1GB of the end of the address space
  *
  * The target functions are mov eax, 42; ret and their detours add 1000 to
- * the result of the original function. The below scenario also prints
+ * the result of the original function. The below scenarios also print
  * whether the trampoline is above the target.
  */
 
@@ -171,12 +180,15 @@ hook_far (void)
 }
 
 static void
-hook_below (void)
+below (bool retry)
 {
   uint8_t* f = allocate_far ();
   uintptr_t o = (uintptr_t) f;
 
   reserve (o - RANGE - GRANULARITY, o);
+
+  if (retry)
+    fault_next (FAULT_VIRTUAL_ALLOC, 1);
 
   void* tramp;
   print_status ("initialize", mh_initialize ());
@@ -190,6 +202,18 @@ hook_below (void)
 
   release ();
   VirtualFree (f, 0, MEM_RELEASE);
+}
+
+static void
+hook_below (void)
+{
+  below (false);
+}
+
+static void
+hook_below_retry (void)
+{
+  below (true);
 }
 
 static void
@@ -212,6 +236,75 @@ hook_reserved (void)
   VirtualFree (f, 0, MEM_RELEASE);
 }
 
+static void
+hook_far_first (void)
+{
+  uint8_t* f = allocate_far ();
+  uint8_t* n = code_allocate (0, function_code, sizeof (function_code));
+
+  print_status ("initialize", mh_initialize ());
+  print_status ("create-far",
+                mh_create_hook (f,
+                                address (&detour_far),
+                                (void**) &original_far));
+  print_status ("create-near",
+                mh_create_hook (n,
+                                address (&detour_near),
+                                (void**) &original_near));
+  print_status ("enable-all", mh_enable_hook (MH_ALL_HOOKS));
+  printf ("call-far %d\n", call (f));
+  printf ("call-near %d\n", call (n));
+  print_status ("uninitialize", mh_uninitialize ());
+
+  code_free (n);
+  VirtualFree (f, 0, MEM_RELEASE);
+}
+
+/* Hook the function at the page and print the outcome.
+ */
+static void
+hook_at (uint8_t* p)
+{
+  memset (p, 0xCC, CODE_PAGE_SIZE);
+  memcpy (p, function_code, sizeof (function_code));
+
+  print_status ("initialize", mh_initialize ());
+  print_status ("create",
+                mh_create_hook (p,
+                                address (&detour_far),
+                                (void**) &original_far));
+  print_status ("enable", mh_enable_hook (p));
+  printf ("call %d\n", call (p));
+  print_status ("uninitialize", mh_uninitialize ());
+
+  VirtualFree (p, 0, MEM_RELEASE);
+}
+
+/* Note that the first 1GB of the address space then reaches down to the
+ * lowest address that the system allocates.
+ */
+static void
+hook_low (void)
+{
+  uint8_t* p = (uint8_t*) VirtualAlloc ((void*) (RANGE + GRANULARITY),
+                                        CODE_PAGE_SIZE,
+                                        MEM_COMMIT | MEM_RESERVE,
+                                        PAGE_EXECUTE_READWRITE);
+  assert (p != NULL);
+  hook_at (p);
+}
+
+static void
+hook_high (void)
+{
+  uint8_t* p = (uint8_t*) VirtualAlloc (NULL,
+                                        CODE_PAGE_SIZE,
+                                        MEM_COMMIT | MEM_RESERVE | MEM_TOP_DOWN,
+                                        PAGE_EXECUTE_READWRITE);
+  assert (p != NULL);
+  hook_at (p);
+}
+
 struct scenario
 {
   const char* name;
@@ -219,9 +312,13 @@ struct scenario
 };
 
 static const struct scenario scenarios[] = {
-  {"far",      &hook_far},
-  {"below",    &hook_below},
-  {"reserved", &hook_reserved}};
+  {"far",         &hook_far},
+  {"far-first",   &hook_far_first},
+  {"below",       &hook_below},
+  {"below-retry", &hook_below_retry},
+  {"reserved",    &hook_reserved},
+  {"low",         &hook_low},
+  {"high",        &hook_high}};
 
 int
 main (int argc, char* argv[])
@@ -236,6 +333,7 @@ main (int argc, char* argv[])
   {
     if (strcmp (argv[1], scenarios[i].name) == 0)
     {
+      fault_redirect ();
       scenarios[i].function ();
       return 0;
     }

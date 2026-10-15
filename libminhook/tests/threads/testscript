@@ -69,6 +69,10 @@ $* hot-patch >>EOO
   initialize MH_OK
   create MH_OK
   enable MH_OK
+  disable-all MH_OK
+  disable-all elsewhere
+  enable MH_OK
+  enable elsewhere
   remove MH_OK
   remove target
   uninitialize MH_OK
