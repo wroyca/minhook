@@ -1,0 +1,43 @@
+intf_libs = # Interface dependencies.
+impl_libs = # Implementation dependencies.
+#import xxxx_libs += libhello%lib{hello}
+
+lib{minhook}: {h c}{** -version} h{version} $impl_libs $intf_libs
+
+h{version}: in{version} $src_root/manifest
+
+# Build options.
+#
+c.poptions =+ "-I$out_root" "-I$src_root"
+
+obja{*}: c.poptions += -DLIBMINHOOK_STATIC_BUILD
+objs{*}: c.poptions += -DLIBMINHOOK_SHARED_BUILD
+
+# Export options.
+#
+lib{minhook}:
+{
+  c.export.poptions = "-I$out_root" "-I$src_root"
+  c.export.libs = $intf_libs
+}
+
+liba{minhook}: c.export.poptions += -DLIBMINHOOK_STATIC
+libs{minhook}: c.export.poptions += -DLIBMINHOOK_SHARED
+
+# For pre-releases use the complete version to make sure they cannot
+# be used in place of another pre-release or the final version. See
+# the version module for details on the version.* variable values.
+#
+if $version.pre_release
+  lib{minhook}: bin.lib.version = "-$version.project_id"
+else
+  lib{minhook}: bin.lib.version = "-$version.major.$version.minor"
+
+# Install into the libminhook/ subdirectory of, say, /usr/include/
+# recreating subdirectories.
+#
+h{*}:
+{
+  install         = include/libminhook/
+  install.subdirs = true
+}

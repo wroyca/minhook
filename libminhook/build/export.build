@@ -1,0 +1,6 @@
+$out_root/
+{
+  include libminhook/
+}
+
+export $out_root/libminhook/$import.target

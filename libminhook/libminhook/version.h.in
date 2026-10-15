@@ -1,0 +1,34 @@
+#pragma once
+
+/* The numeric version format is AAAAABBBBBCCCCCDDDE where:
+ *
+ * AAAAA - major version number
+ * BBBBB - minor version number
+ * CCCCC - bugfix version number
+ * DDD   - alpha / beta (DDD + 500) version number
+ * E     - final (0) / snapshot (1)
+ *
+ * When DDDE is not 0, 1 is subtracted from AAAAABBBBBCCCCC. For example:
+ *
+ * Version      AAAAABBBBBCCCCCDDDE
+ *
+ * 0.1.0        0000000001000000000
+ * 0.1.2        0000000001000020000
+ * 1.2.3        0000100002000030000
+ * 2.2.0-a.1    0000200001999990010
+ * 3.0.0-b.2    0000299999999995020
+ * 2.2.0-a.1.z  0000200001999990011
+ */
+#define LIBMINHOOK_VERSION       $libminhook.version.project_number$ULL
+#define LIBMINHOOK_VERSION_STR   "$libminhook.version.project$"
+#define LIBMINHOOK_VERSION_ID    "$libminhook.version.project_id$"
+#define LIBMINHOOK_VERSION_FULL  "$libminhook.version$"
+
+#define LIBMINHOOK_VERSION_MAJOR $libminhook.version.major$
+#define LIBMINHOOK_VERSION_MINOR $libminhook.version.minor$
+#define LIBMINHOOK_VERSION_PATCH $libminhook.version.patch$
+
+#define LIBMINHOOK_PRE_RELEASE   $libminhook.version.pre_release$
+
+#define LIBMINHOOK_SNAPSHOT_SN   $libminhook.version.snapshot_sn$ULL
+#define LIBMINHOOK_SNAPSHOT_ID   "$libminhook.version.snapshot_id$"

@@ -1,0 +1,14 @@
+: 1
+name: libminhook
+version: 0.1.0-a.0.z
+language: c
+project: minhook
+summary: minhook C library
+license: other: proprietary ; Not free/open source.
+description-file: README.md
+url: https://example.org/minhook
+email: wroy@proton.me
+#build-error-email: wroy@proton.me
+depends: * build2 >= 0.18.0
+depends: * bpkg >= 0.18.0
+#depends: libhello ^1.0.0
