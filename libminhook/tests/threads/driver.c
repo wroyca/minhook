@@ -281,7 +281,7 @@ inside (void)
   step ("apply",         mh_apply_queued (),             t, target, tramp);
   step ("queue-enable",  mh_queue_enable_hook (target),  t, target, tramp);
   step ("apply",         mh_apply_queued (),             t, target, tramp);
-  step ("remove",        mh_remove_hook (target),        t, target, tramp);
+  step ("remove",        mh_remove_hook (target, NULL),  t, target, tramp);
 
   stop_spinning (t);
   print_status ("uninitialize", mh_uninitialize ());
@@ -320,7 +320,7 @@ relay (void)
   SuspendThread (t);
   set_thread_ip (t, jump_destination (target));
 
-  print_status ("remove", mh_remove_hook (target));
+  print_status ("remove", mh_remove_hook (target, NULL));
   print_location ("remove", t, target, tramp);
   ResumeThread (t);
 
@@ -375,7 +375,7 @@ hot_patch (void)
   SuspendThread (t);
   set_thread_ip (t, (uintptr_t) target - 5);
 
-  print_status ("remove", mh_remove_hook (target));
+  print_status ("remove", mh_remove_hook (target, NULL));
   print_location ("remove", t, target, tramp);
   ResumeThread (t);
 

@@ -147,6 +147,15 @@ init_names (void)
   detours[3].address = UNMAPPED;
 }
 
+/* Remove the hook without a retirement id, so that the command has the
+ * same signature as the others.
+ */
+static enum mh_status
+remove_hook (void* target)
+{
+  return mh_remove_hook (target, NULL);
+}
+
 /* The commands that apply a state change to a target.
  */
 struct target_command
@@ -156,7 +165,7 @@ struct target_command
 };
 
 static const struct target_command target_commands[] = {
-  {"remove",        &mh_remove_hook},
+  {"remove",        &remove_hook},
   {"enable",        &mh_enable_hook},
   {"disable",       &mh_disable_hook},
   {"queue-enable",  &mh_queue_enable_hook},

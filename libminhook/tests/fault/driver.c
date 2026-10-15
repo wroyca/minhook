@@ -40,6 +40,11 @@
  * protect-page        VirtualProtect() for the second page when enabling a
  *                     hook whose jump extends into it
  * virtual-alloc       VirtualAlloc() when allocating a trampoline block
+ * retire-alloc        HeapAlloc() when retiring the first trampoline
+ * retire-grow         HeapReAlloc() when growing the retirement list
+ * reclaim-thread      NtGetNextThread() when reclaiming a trampoline
+ * reclaim-suspend     SuspendThread() when reclaiming a trampoline
+ * reclaim-context     GetThreadContext() when reclaiming a trampoline
  *
  * After enabling, the scenarios that enable a single hook also print the
  * number of the thread handles that the library hasn't closed.
@@ -255,7 +260,7 @@ count_ok (size_t b, size_t e, enum mh_status (*f) (size_t))
 static enum mh_status
 remove_generated (size_t i)
 {
-  return mh_remove_hook (generated + i * GENERATED_SIZE);
+  return mh_remove_hook (generated + i * GENERATED_SIZE, NULL);
 }
 
 static void
@@ -428,9 +433,9 @@ protect_remove (void)
   print_status ("create", create_a ());
   print_status ("enable", mh_enable_hook (address (&target_a)));
   fault_next (FAULT_VIRTUAL_PROTECT, 1);
-  print_status ("remove", mh_remove_hook (address (&target_a)));
+  print_status ("remove", mh_remove_hook (address (&target_a), NULL));
   print_result ("call", target_a (5));
-  print_status ("remove", mh_remove_hook (address (&target_a)));
+  print_status ("remove", mh_remove_hook (address (&target_a), NULL));
   print_result ("call", target_a (5));
   print_status ("uninitialize", mh_uninitialize ());
 }
@@ -497,6 +502,108 @@ protect_page (void)
   assert (r);
 }
 
+/* Remove the enabled hook of a with the allocation failing, then without,
+ * and reclaim its trampoline.
+ */
+static void
+retire_alloc (void)
+{
+  mh_retirement_id id = 0;
+
+  print_status ("initialize", mh_initialize ());
+  print_status ("create", create_a ());
+  print_status ("enable", mh_enable_hook (address (&target_a)));
+  fault_next (FAULT_HEAP_ALLOC, 1);
+  print_status ("remove", mh_remove_hook (address (&target_a), &id));
+  print_result ("call", target_a (5));
+  print_status ("remove", mh_remove_hook (address (&target_a), &id));
+  print_result ("call", target_a (5));
+  print_status ("reclaim", mh_reclaim (id));
+  print_status ("uninitialize", mh_uninitialize ());
+}
+
+/* Note that the retirement list starts with room for 32 retirements. We
+ * hook and remove the same function, so that the hook list never grows or
+ * shrinks.
+ */
+static void
+retire_grow (void)
+{
+  mh_retirement_id ids[33];
+  size_t n = 0;
+
+  print_status ("initialize", mh_initialize ());
+
+  for (; n != 32; ++n)
+  {
+    if (create_a () != MH_OK ||
+        mh_remove_hook (address (&target_a), &ids[n]) != MH_OK)
+      break;
+  }
+
+  printf ("retired %zu\n", n);
+
+  print_status ("create", create_a ());
+  print_status ("enable", mh_enable_hook (address (&target_a)));
+  fault_next (FAULT_HEAP_REALLOC, 1);
+  print_status ("remove", mh_remove_hook (address (&target_a), &ids[n]));
+  print_result ("call", target_a (5));
+  print_status ("remove", mh_remove_hook (address (&target_a), &ids[n]));
+  print_result ("call", target_a (5));
+
+  size_t c = 0;
+  for (size_t i = 0; i != n + 1; ++i)
+  {
+    if (mh_reclaim (ids[i]) == MH_OK)
+      ++c;
+  }
+
+  printf ("reclaimed %zu\n", c);
+  print_status ("uninitialize", mh_uninitialize ());
+}
+
+/* Reclaim the retired trampoline of a with another thread and the function
+ * failing, then without.
+ */
+static void
+reclaim_failing (enum fault_function f, unsigned n)
+{
+  mh_retirement_id id = 0;
+
+  start_threads (1);
+
+  print_status ("initialize", mh_initialize ());
+  print_status ("create", create_a ());
+  print_status ("remove", mh_remove_hook (address (&target_a), &id));
+  fault_next (f, n);
+  print_status ("reclaim", mh_reclaim (id));
+  print_handles ();
+  fault_next (f, 0);
+  print_status ("reclaim", mh_reclaim (id));
+  print_handles ();
+  print_status ("uninitialize", mh_uninitialize ());
+
+  stop_threads ();
+}
+
+static void
+reclaim_thread (void)
+{
+  reclaim_failing (FAULT_NEXT_THREAD, 1);
+}
+
+static void
+reclaim_suspend (void)
+{
+  reclaim_failing (FAULT_SUSPEND_THREAD, (unsigned) -1);
+}
+
+static void
+reclaim_context (void)
+{
+  reclaim_failing (FAULT_THREAD_CONTEXT, (unsigned) -1);
+}
+
 /* On x64 the library tries the next free region within reach. On x86 it
  * lets the system choose the address, so it has no other region to try.
  */
@@ -531,7 +638,12 @@ static const struct scenario scenarios[] = {
   {"protect-remove",       &protect_remove},
   {"protect-uninitialize", &protect_uninitialize},
   {"protect-page",         &protect_page},
-  {"virtual-alloc",        &virtual_alloc}};
+  {"virtual-alloc",        &virtual_alloc},
+  {"retire-alloc",         &retire_alloc},
+  {"retire-grow",          &retire_grow},
+  {"reclaim-thread",       &reclaim_thread},
+  {"reclaim-suspend",      &reclaim_suspend},
+  {"reclaim-context",      &reclaim_context}};
 
 int
 main (int argc, char* argv[])

@@ -44,15 +44,13 @@
 #  define MH_MEMORY_SLOT_SIZE 32
 #endif
 
-/* Initialize the slot allocator. Call before the other functions below.
+/* Initialize the slot allocator. Call before allocating a slot.
+ *
+ * Note that the allocator keeps its blocks across initializations since
+ * the slots of retired trampolines stay in use (see mh_remove_hook()).
  */
 void
 mh_initialize_buffer (void);
-
-/* Release all the memory, including the slots in use.
- */
-void
-mh_uninitialize_buffer (void);
 
 /* Return a slot near the origin or NULL if unable to allocate one.
  */

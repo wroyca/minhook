@@ -1,0 +1,139 @@
+# Retiring the trampolines of removed hooks and reclaiming them.
+#
+
+: reclaim
+:
+: Test that removing a hook retires its trampoline, which stays allocated
+: until it is reclaimed, and that it can only be reclaimed once.
+:
+$* reclaim >>EOO
+  initialize MH_OK
+  create MH_OK
+  enable MH_OK
+  remove MH_OK
+  id 1
+  call 42
+  allocated 1
+  reclaim MH_OK
+  allocated 0
+  reclaim MH_ERROR_NOT_RETIRED
+  uninitialize MH_OK
+  EOO
+
+: repeat
+:
+: Test that each removal of the same target retires a trampoline of its
+: own and that reclaiming one leaves the other retired.
+:
+$* repeat >>EOO
+  initialize MH_OK
+  create MH_OK
+  remove MH_OK
+  id 1
+  create MH_OK
+  remove MH_OK
+  id 2
+  reclaim MH_OK
+  reclaim MH_OK
+  allocated 0
+  allocated 0
+  uninitialize MH_OK
+  EOO
+
+: unknown
+:
+: Test that ids that were never issued are rejected, also while the library
+: is not initialized.
+:
+$* unknown >>EOO
+  reclaim MH_ERROR_NOT_RETIRED
+  reclaim MH_ERROR_NOT_RETIRED
+  EOO
+
+: null
+:
+: Test that a trampoline retired without an id stays allocated.
+:
+$* null >>EOO
+  initialize MH_OK
+  create MH_OK
+  remove MH_OK
+  original 42
+  allocated 1
+  uninitialize MH_OK
+  EOO
+
+: uninitialize
+:
+: Test that uninitializing restores the targets and keeps the trampolines
+: allocated.
+:
+$* uninitialize >>EOO
+  initialize MH_OK
+  create MH_OK
+  enable MH_OK
+  uninitialize MH_OK
+  call 42
+  original 42
+  allocated 1
+  EOO
+
+: uninitialized
+:
+: Test reclaiming a trampoline while the library is not initialized.
+:
+$* uninitialized >>EOO
+  initialize MH_OK
+  create MH_OK
+  remove MH_OK
+  uninitialize MH_OK
+  reclaim MH_OK
+  allocated 0
+  EOO
+
+: call
+:
+: Test that a thread inside a call that the trampoline made returns into
+: the retired trampoline and completes the original function.
+:
+$* call >>EOO
+  initialize MH_OK
+  create MH_OK
+  enable MH_OK
+  remove MH_OK
+  call 1007
+  reclaim MH_OK
+  uninitialize MH_OK
+  EOO
+
+: busy
+:
+: Test that a trampoline that a thread executes is not reclaimed until the
+: thread leaves it.
+:
+$* busy >>EOO
+  initialize MH_OK
+  create MH_OK
+  remove MH_OK
+  reclaim MH_ERROR_BUSY
+  allocated 1
+  reclaim MH_OK
+  allocated 0
+  uninitialize MH_OK
+  EOO
+
+: invalid
+:
+{{
+  : missing
+  :
+  : Test that the scenario is required.
+  :
+  $* 2>'error: expected scenario' != 0
+
+  : unknown
+  :
+  : Test that an unknown scenario is rejected.
+  :
+  $* bogus 2>"error: invalid scenario 'bogus'" != 0
+}}

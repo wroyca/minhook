@@ -269,6 +269,89 @@ else
     EOO
 }
 
+: retire-alloc
+:
+: Test that removing a hook fails if its retirement cannot be recorded and
+: leaves the hook enabled.
+:
+$* retire-alloc >>EOO
+  initialize MH_OK
+  create MH_OK
+  enable MH_OK
+  remove MH_ERROR_MEMORY_ALLOC
+  call 1016
+  remove MH_OK
+  call 16
+  reclaim MH_OK
+  uninitialize MH_OK
+  EOO
+
+: retire-grow
+:
+: Test that removing a hook fails if the retirement list cannot grow and
+: leaves the hook enabled.
+:
+$* retire-grow >>EOO
+  initialize MH_OK
+  retired 32
+  create MH_OK
+  enable MH_OK
+  remove MH_ERROR_MEMORY_ALLOC
+  call 1016
+  remove MH_OK
+  call 16
+  reclaimed 33
+  uninitialize MH_OK
+  EOO
+
+: reclaim-thread
+:
+: Test that reclaiming fails if the threads cannot be enumerated and leaves
+: the trampoline retired.
+:
+$* reclaim-thread >>EOO
+  initialize MH_OK
+  create MH_OK
+  remove MH_OK
+  reclaim MH_ERROR_MEMORY_ALLOC
+  handles 0
+  reclaim MH_OK
+  handles 0
+  uninitialize MH_OK
+  EOO
+
+: reclaim-suspend
+:
+: Test that a thread that cannot be suspended counts as executing the
+: trampoline.
+:
+$* reclaim-suspend >>EOO
+  initialize MH_OK
+  create MH_OK
+  remove MH_OK
+  reclaim MH_ERROR_BUSY
+  handles 0
+  reclaim MH_OK
+  handles 0
+  uninitialize MH_OK
+  EOO
+
+: reclaim-context
+:
+: Test that a thread whose context cannot be read counts as executing the
+: trampoline.
+:
+$* reclaim-context >>EOO
+  initialize MH_OK
+  create MH_OK
+  remove MH_OK
+  reclaim MH_ERROR_BUSY
+  handles 0
+  reclaim MH_OK
+  handles 0
+  uninitialize MH_OK
+  EOO
+
 : invalid
 :
 {{

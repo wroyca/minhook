@@ -29,6 +29,7 @@
 #pragma once
 
 #include <stddef.h> /* NULL, wchar_t */
+#include <stdint.h> /* uint64_t */
 
 #include <libminhook/export.h>
 
@@ -60,8 +61,15 @@ enum mh_status
   MH_ERROR_MEMORY_ALLOC,         /* Unable to allocate memory. */
   MH_ERROR_MEMORY_PROTECT,       /* Unable to change memory protection. */
   MH_ERROR_MODULE_NOT_FOUND,     /* Module not loaded. */
-  MH_ERROR_FUNCTION_NOT_FOUND    /* Function not exported by the module. */
+  MH_ERROR_FUNCTION_NOT_FOUND,   /* Function not exported by the module. */
+  MH_ERROR_BUSY,                 /* Trampoline executed by a thread. */
+  MH_ERROR_NOT_RETIRED           /* No retired trampoline with the id. */
 };
+
+/* Identifier of a retired trampoline (see mh_remove_hook()). The library
+ * never issues 0 and never issues the same identifier twice.
+ */
+typedef uint64_t mh_retirement_id;
 
 /* Target that denotes all the hooks (see mh_enable_hook() and
  * mh_queue_enable_hook()).
@@ -72,6 +80,10 @@ enum mh_status
  * serialize on an internal lock and, while patching code, suspend all the
  * other threads of the process. Those that need the library initialized
  * return MH_ERROR_NOT_INITIALIZED if it is not.
+ *
+ * Note also that the library never frees a trampoline on its own since it
+ * can't tell whether some thread may still enter it. See mh_remove_hook()
+ * and mh_reclaim() for details.
  */
 
 /* Initialize the library. Return MH_ERROR_ALREADY_INITIALIZED if it is
@@ -88,8 +100,9 @@ mh_initialize (void);
  * If unable to disable the hooks (see mh_disable_hook()), then return that
  * status and leave the library initialized.
  *
- * Note that this frees the trampolines. See mh_remove_hook() for what this
- * means for the threads inside a call that a trampoline makes.
+ * Note that the trampolines of the hooks stay allocated until the process
+ * terminates. To be able to reclaim a trampoline, remove its hook with
+ * mh_remove_hook() first.
  */
 LIBMINHOOK_SYMEXPORT enum mh_status
 mh_uninitialize (void);
@@ -130,20 +143,43 @@ mh_create_hook_api (const wchar_t* module,
                     void* detour,
                     void** original);
 
-/* Disable the hook of the target function if it is enabled and remove it.
- * Return MH_ERROR_NOT_CREATED if the target has no hook.
+/* Disable the hook of the target function if it is enabled, remove it, and
+ * retire its trampoline. If retired is not NULL, then store in it the
+ * trampoline's retirement id. Return MH_ERROR_NOT_CREATED if the target has
+ * no hook and MH_ERROR_MEMORY_ALLOC if unable to record the retirement.
  *
  * If unable to disable the hook (see mh_disable_hook()), then return that
  * status and keep the hook enabled.
  *
- * Note that removing the hook frees its trampoline. If the instructions that
- * the hook overwrites include a call, then the trampoline makes that call
- * and a thread inside the callee returns into the trampoline. We don't walk
- * the threads' stacks to find such return addresses, so the caller must
- * make sure that no thread is inside such a call when removing the hook.
+ * A retired trampoline stays allocated and executable since a thread may
+ * still enter it: through the trampoline pointer that mh_create_hook()
+ * stored, by returning from a call that the trampoline made, and so on.
+ * Once the caller has established that no thread can, it frees the
+ * trampoline with mh_reclaim(). If retired is NULL, then the trampoline
+ * stays allocated until the process terminates.
  */
 LIBMINHOOK_SYMEXPORT enum mh_status
-mh_remove_hook (void* target);
+mh_remove_hook (void* target, mh_retirement_id* retired);
+
+/* Free the retired trampoline with the id. The caller must make sure that
+ * no thread can enter it (see mh_remove_hook()). Return
+ * MH_ERROR_NOT_RETIRED if no trampoline with the id is retired.
+ *
+ * Before freeing the trampoline, suspend the process's other threads and
+ * check where they are. If a thread is executing the trampoline, or if we
+ * can't suspend a thread or read where it is, then return MH_ERROR_BUSY
+ * and leave the trampoline retired. Return MH_ERROR_MEMORY_ALLOC if unable
+ * to enumerate the threads, which also leaves it retired.
+ *
+ * Note that this check doesn't establish that no thread can enter the
+ * trampoline. For example, a thread that is about to call it through a
+ * saved pointer is not executing it yet.
+ *
+ * Unlike the other functions, this one also works while the library is not
+ * initialized.
+ */
+LIBMINHOOK_SYMEXPORT enum mh_status
+mh_reclaim (mh_retirement_id);
 
 /* Enable or disable the hook of the target function or, if target is
  * MH_ALL_HOOKS, all the hooks. Return MH_ERROR_NOT_CREATED if the target

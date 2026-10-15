@@ -10,6 +10,7 @@ $* 1 >>EOO
   hooked 1
   restored 1
   removed 1
+  reclaimed 1
   EOO
 
 : initial
@@ -21,6 +22,7 @@ $* 32 >>EOO
   hooked 32
   restored 32
   removed 32
+  reclaimed 32
   EOO
 
 : grow
@@ -32,18 +34,22 @@ $* 33 >>EOO
   hooked 33
   restored 33
   removed 33
+  reclaimed 33
   EOO
 
 : blocks
 :
 : Test hooks that need several blocks of trampoline slots and a hook list
-: that grows and shrinks several times.
+: that grows and shrinks several times. Reclaiming the trampolines in the
+: order of creation releases the blocks in the order of their allocation,
+: which is the reverse of the block list's.
 :
 $* 256 >>EOO
   created 256
   hooked 256
   restored 256
   removed 256
+  reclaimed 256
   EOO
 
 : invalid

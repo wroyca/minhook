@@ -163,7 +163,7 @@ main (int argc, char* argv[])
 
     s = mh_enable_hook (t);
     assert (s == MH_OK);
-    s = mh_remove_hook (t);
+    s = mh_remove_hook (t, NULL);
     assert (s == MH_OK);
     printf ("removed %d\n", call ());
   }

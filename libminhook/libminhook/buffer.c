@@ -85,20 +85,6 @@ mh_initialize_buffer (void)
 #endif
 }
 
-void
-mh_uninitialize_buffer (void)
-{
-  struct memory_block* b = blocks;
-  blocks = NULL;
-
-  while (b != NULL)
-  {
-    struct memory_block* n = b->next;
-    VirtualFree (b, 0, MEM_RELEASE);
-    b = n;
-  }
-}
-
 /* Allocate a block at the address or, if it is NULL, anywhere. Return NULL
  * if unable to.
  */

@@ -129,7 +129,7 @@ main (int argc, char* argv[])
     assert (mh_enable_hook (address (e)) == MH_OK);
     printf ("hooked %lu\n", (unsigned long) e ());
     printf ("original %d\n", original () == v ? 1 : 0);
-    assert (mh_remove_hook (address (e)) == MH_OK);
+    assert (mh_remove_hook (address (e), NULL) == MH_OK);
   }
 
   assert (mh_uninitialize () == MH_OK);

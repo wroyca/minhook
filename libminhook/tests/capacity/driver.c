@@ -17,10 +17,12 @@
  * hooked <n>
  * restored <n>
  * removed <n>
+ * reclaimed <n>
  *
  * The steps create the hooks, enable them all at once (the functions then
- * return -1), disable them all at once (the functions then return i), and
- * remove them in the order of creation (the functions still return i).
+ * return -1), disable them all at once (the functions then return i),
+ * remove them in the order of creation (the functions still return i), and
+ * reclaim their trampolines in the same order.
  *
  * The count is at most 256.
  */
@@ -117,14 +119,24 @@ main (int argc, char* argv[])
   assert (s == MH_OK);
   printf ("restored %zu\n", count_returning (p, n, -2));
 
+  mh_retirement_id ids[MAX_COUNT];
+
   c = 0;
   for (size_t i = 0; i != n; ++i)
   {
-    if (mh_remove_hook (p + i * FUNCTION_SIZE) == MH_OK &&
+    if (mh_remove_hook (p + i * FUNCTION_SIZE, &ids[i]) == MH_OK &&
         call (p + i * FUNCTION_SIZE) == (int) i)
       ++c;
   }
   printf ("removed %zu\n", c);
+
+  c = 0;
+  for (size_t i = 0; i != n; ++i)
+  {
+    if (mh_reclaim (ids[i]) == MH_OK)
+      ++c;
+  }
+  printf ("reclaimed %zu\n", c);
 
   s = mh_uninitialize ();
   assert (s == MH_OK);

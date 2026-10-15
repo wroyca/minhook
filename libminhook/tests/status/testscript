@@ -18,6 +18,8 @@
   $* 10 >'MH_ERROR_MEMORY_PROTECT'       : memory-protect
   $* 11 >'MH_ERROR_MODULE_NOT_FOUND'     : module-not-found
   $* 12 >'MH_ERROR_FUNCTION_NOT_FOUND'   : function-not-found
+  $* 13 >'MH_ERROR_BUSY'                 : busy
+  $* 14 >'MH_ERROR_NOT_RETIRED'          : not-retired
 }}
 
 : out-of-range
@@ -25,7 +27,7 @@
 : Test that a value outside the enumeration has a placeholder name.
 :
 {{
-  $* 13 >'(unknown)' : above
+  $* 15 >'(unknown)' : above
   $* -2 >'(unknown)' : below
 }}
 

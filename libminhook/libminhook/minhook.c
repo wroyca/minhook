@@ -58,6 +58,12 @@ mh_farproc_size_check[sizeof (FARPROC) == sizeof (void*) ? 1 : -1];
 #define INVALID_HOOK_POS UINT_MAX
 #define ALL_HOOKS_POS    UINT_MAX
 
+/* Initial capacity of the retirement list and the position that denotes no
+ * retirement (see find_retirement()).
+ */
+#define INITIAL_RETIREMENT_CAPACITY 32
+#define INVALID_RETIREMENT_POS      UINT_MAX
+
 /* Open the process's thread that follows the thread (or the first one if
  * thread is NULL) with the access rights and store its handle in next.
  * Return NO_MORE_THREADS after the last thread.
@@ -117,8 +123,11 @@ struct hook_entry
   uint8_t new_ips[8]; /* Boundaries in the trampoline. */
 };
 
-/* Threads that are suspended while the hooks are patched. A NULL handle is
- * a thread that could not be suspended.
+/* Threads that are suspended while the hooks are patched or a trampoline
+ * is reclaimed. A NULL handle is a thread that could not be suspended.
+ *
+ * Note that the list comes from the process heap since mh_reclaim() also
+ * suspends the threads while the library is not initialized.
  */
 struct frozen_threads
 {
@@ -145,6 +154,32 @@ static struct
   unsigned int       capacity;
   unsigned int       size;
 } hooks;
+
+/* Trampoline that removing its hook retired (see mh_remove_hook()).
+ */
+struct retirement
+{
+  mh_retirement_id id;
+  void*            trampoline;
+};
+
+/* Retired trampolines in the order of their retirement, except that
+ * reclaiming one moves the last into its place.
+ *
+ * Note that the list comes from the process heap since it outlives the
+ * library's heap (see mh_reclaim()).
+ */
+static struct
+{
+  struct retirement* items;
+  unsigned int       capacity;
+  unsigned int       size;
+} retirements;
+
+/* Id of the next retirement. It persists across initializations so that
+ * an id is never issued twice.
+ */
+static mh_retirement_id next_retirement_id = 1;
 
 /* Return the target's hook position or INVALID_HOOK_POS if not found.
  */
@@ -211,6 +246,74 @@ delete_hook_entry (unsigned int pos)
 
     hooks.capacity /= 2;
     hooks.items = p;
+  }
+}
+
+/* Return the position of the retirement with the id or
+ * INVALID_RETIREMENT_POS if not found.
+ */
+static unsigned int
+find_retirement (mh_retirement_id id)
+{
+  for (unsigned int i = 0; i < retirements.size; ++i)
+  {
+    if (retirements.items[i].id == id)
+      return i;
+  }
+
+  return INVALID_RETIREMENT_POS;
+}
+
+/* Make room for one more retirement. Return false if unable to allocate.
+ */
+static bool
+reserve_retirement (void)
+{
+  if (retirements.items == NULL)
+  {
+    retirements.items = (struct retirement*) HeapAlloc (
+      GetProcessHeap (),
+      0,
+      INITIAL_RETIREMENT_CAPACITY * sizeof (struct retirement));
+
+    if (retirements.items == NULL)
+      return false;
+
+    retirements.capacity = INITIAL_RETIREMENT_CAPACITY;
+  }
+  else if (retirements.size >= retirements.capacity)
+  {
+    struct retirement* p = (struct retirement*) HeapReAlloc (
+      GetProcessHeap (),
+      0,
+      retirements.items,
+      retirements.capacity * 2 * sizeof (struct retirement));
+
+    if (p == NULL)
+      return false;
+
+    retirements.capacity *= 2;
+    retirements.items = p;
+  }
+
+  return true;
+}
+
+/* Delete the retirement by moving the last retirement into its position.
+ * Free the list once it is empty.
+ */
+static void
+delete_retirement (unsigned int pos)
+{
+  if (pos < retirements.size - 1)
+    retirements.items[pos] = retirements.items[retirements.size - 1];
+
+  if (--retirements.size == 0)
+  {
+    HeapFree (GetProcessHeap (), 0, retirements.items);
+
+    retirements.items = NULL;
+    retirements.capacity = 0;
   }
 }
 
@@ -324,7 +427,9 @@ append_thread (struct frozen_threads* ts, HANDLE thread)
   if (ts->items == NULL)
   {
     ts->capacity = INITIAL_THREAD_CAPACITY;
-    ts->items = (HANDLE*) HeapAlloc (heap, 0, ts->capacity * sizeof (HANDLE));
+    ts->items = (HANDLE*) HeapAlloc (GetProcessHeap (),
+                                     0,
+                                     ts->capacity * sizeof (HANDLE));
 
     if (ts->items == NULL)
       return false;
@@ -334,7 +439,7 @@ append_thread (struct frozen_threads* ts, HANDLE thread)
     ts->capacity *= 2;
 
     HANDLE* p = (HANDLE*) HeapReAlloc (
-      heap, 0, ts->items, ts->capacity * sizeof (HANDLE));
+      GetProcessHeap (), 0, ts->items, ts->capacity * sizeof (HANDLE));
 
     if (p == NULL)
       return false;
@@ -401,20 +506,19 @@ enumerate_threads (struct frozen_threads* ts)
 
   if (ts->items != NULL)
   {
-    HeapFree (heap, 0, ts->items);
+    HeapFree (GetProcessHeap (), 0, ts->items);
     ts->items = NULL;
   }
 
   return false;
 }
 
-/* Suspend the process's other threads and move those that are within the
- * code that the action patches (see process_thread_ips()). Leave alone the
- * threads that can't be suspended. Return MH_ERROR_MEMORY_ALLOC if unable
- * to enumerate the threads.
+/* Suspend the process's other threads, leaving alone those that can't be
+ * suspended. Return MH_ERROR_MEMORY_ALLOC if unable to enumerate the
+ * threads.
  */
 static enum mh_status
-freeze (struct frozen_threads* ts, unsigned int pos, enum action a)
+freeze (struct frozen_threads* ts)
 {
   ts->items = NULL;
   ts->capacity = 0;
@@ -427,9 +531,7 @@ freeze (struct frozen_threads* ts, unsigned int pos, enum action a)
   {
     HANDLE t = ts->items[i];
 
-    if (SuspendThread (t) != 0xFFFFFFFF)
-      process_thread_ips (t, pos, a);
-    else
+    if (SuspendThread (t) == 0xFFFFFFFF)
     {
       CloseHandle (t);
       ts->items[i] = NULL;
@@ -437,6 +539,22 @@ freeze (struct frozen_threads* ts, unsigned int pos, enum action a)
   }
 
   return MH_OK;
+}
+
+/* Move the suspended threads that are within the code that the action on
+ * the hook at the position (or on all the hooks) patches (see
+ * process_thread_ips()).
+ */
+static void
+move_threads (const struct frozen_threads* ts, unsigned int pos, enum action a)
+{
+  for (unsigned int i = 0; i < ts->size; ++i)
+  {
+    HANDLE t = ts->items[i];
+
+    if (t != NULL)
+      process_thread_ips (t, pos, a);
+  }
 }
 
 /* Resume and close the suspended threads and free the list.
@@ -458,7 +576,7 @@ unfreeze (struct frozen_threads* ts)
     CloseHandle (t);
   }
 
-  HeapFree (heap, 0, ts->items);
+  HeapFree (GetProcessHeap (), 0, ts->items);
 }
 
 /* Return the number of the code's bytes that are on the page of its first
@@ -569,11 +687,12 @@ static enum mh_status
 patch_hook_frozen (unsigned int pos, bool enable, enum action a)
 {
   struct frozen_threads ts;
-  enum mh_status r = freeze (&ts, pos, a);
+  enum mh_status r = freeze (&ts);
 
   if (r != MH_OK)
     return r;
 
+  move_threads (&ts, pos, a);
   r = patch_hook (pos, enable);
   unfreeze (&ts);
   return r;
@@ -604,10 +723,12 @@ patch_hooks (enum action a)
     return MH_OK;
 
   struct frozen_threads ts;
-  enum mh_status r = freeze (&ts, ALL_HOOKS_POS, a);
+  enum mh_status r = freeze (&ts);
 
   if (r != MH_OK)
     return r;
+
+  move_threads (&ts, ALL_HOOKS_POS, a);
 
   for (unsigned int i = first; i < hooks.size; ++i)
   {
@@ -677,10 +798,11 @@ uninitialize (void)
   if (r != MH_OK)
     return r;
 
-  mh_uninitialize_buffer ();
-
   /* Destroying the heap frees the hook list. We free it explicitly as well
    * since some tools would otherwise report a leak.
+   *
+   * Note that we leave the hooks' trampolines allocated since a thread may
+   * still enter them (see mh_uninitialize()).
    */
   HeapFree (heap, 0, hooks.items);
   HeapDestroy (heap);
@@ -765,7 +887,7 @@ create_hook (void* target, void* detour, void** original)
 }
 
 static enum mh_status
-remove_hook (void* target)
+remove_hook (void* target, mh_retirement_id* retired)
 {
   if (heap == NULL)
     return MH_ERROR_NOT_INITIALIZED;
@@ -775,6 +897,12 @@ remove_hook (void* target)
   if (pos == INVALID_HOOK_POS)
     return MH_ERROR_NOT_CREATED;
 
+  /* Make room for the retirement first, so that we don't fail with the
+   * hook already disabled.
+   */
+  if (retired != NULL && !reserve_retirement ())
+    return MH_ERROR_MEMORY_ALLOC;
+
   if (hooks.items[pos].enabled)
   {
     enum mh_status r = patch_hook_frozen (pos, false, ACTION_DISABLE);
@@ -783,10 +911,86 @@ remove_hook (void* target)
       return r;
   }
 
-  mh_free_buffer (hooks.items[pos].trampoline);
-  delete_hook_entry (pos);
+  /* Retire the trampoline. Without an id nobody can reclaim it, so we don't
+   * record it.
+   */
+  if (retired != NULL)
+  {
+    struct retirement* r = &retirements.items[retirements.size++];
+    r->id = next_retirement_id++;
+    r->trampoline = hooks.items[pos].trampoline;
 
+    *retired = r->id;
+  }
+
+  delete_hook_entry (pos);
   return MH_OK;
+}
+
+/* Return true if the suspended thread may be executing the trampoline or,
+ * on x64, its relay, which is in the same slot. A thread that could not be
+ * suspended (NULL) or whose context we can't read may be.
+ */
+static bool
+executing (HANDLE thread, uintptr_t trampoline)
+{
+  if (thread == NULL)
+    return true;
+
+  CONTEXT c;
+  c.ContextFlags = CONTEXT_CONTROL;
+
+  if (!GetThreadContext (thread, &c))
+    return true;
+
+#if defined(_M_X64) || defined(__x86_64__)
+  uintptr_t ip = (uintptr_t) c.Rip;
+#else
+  uintptr_t ip = (uintptr_t) c.Eip;
+#endif
+
+  return trampoline <= ip && ip < trampoline + MH_MEMORY_SLOT_SIZE;
+}
+
+/* Note that this function doesn't need the library initialized: the
+ * retirements and the thread list come from the process heap and freeing a
+ * trampoline only needs its block.
+ */
+static enum mh_status
+reclaim (mh_retirement_id id)
+{
+  unsigned int pos = find_retirement (id);
+
+  if (pos == INVALID_RETIREMENT_POS)
+    return MH_ERROR_NOT_RETIRED;
+
+  struct frozen_threads ts;
+  enum mh_status r = freeze (&ts);
+
+  if (r != MH_OK)
+    return r;
+
+  /* See if a thread executes the trampoline.
+   */
+  uintptr_t t = (uintptr_t) retirements.items[pos].trampoline;
+
+  for (unsigned int i = 0; i < ts.size; ++i)
+  {
+    if (executing (ts.items[i], t))
+    {
+      r = MH_ERROR_BUSY;
+      break;
+    }
+  }
+
+  if (r == MH_OK)
+  {
+    mh_free_buffer ((void*) t);
+    delete_retirement (pos);
+  }
+
+  unfreeze (&ts);
+  return r;
 }
 
 /* Note that MinHook processes the threads for enabling in both cases. We
@@ -875,10 +1079,19 @@ mh_create_hook (void* target, void* detour, void** original)
 }
 
 enum mh_status
-mh_remove_hook (void* target)
+mh_remove_hook (void* target, mh_retirement_id* retired)
 {
   lock ();
-  enum mh_status r = remove_hook (target);
+  enum mh_status r = remove_hook (target, retired);
+  unlock ();
+  return r;
+}
+
+enum mh_status
+mh_reclaim (mh_retirement_id id)
+{
+  lock ();
+  enum mh_status r = reclaim (id);
   unlock ();
   return r;
 }
@@ -985,6 +1198,8 @@ mh_status_to_string (enum mh_status s)
     case MH_ERROR_MEMORY_PROTECT:       return "MH_ERROR_MEMORY_PROTECT";
     case MH_ERROR_MODULE_NOT_FOUND:     return "MH_ERROR_MODULE_NOT_FOUND";
     case MH_ERROR_FUNCTION_NOT_FOUND:   return "MH_ERROR_FUNCTION_NOT_FOUND";
+    case MH_ERROR_BUSY:                 return "MH_ERROR_BUSY";
+    case MH_ERROR_NOT_RETIRED:          return "MH_ERROR_NOT_RETIRED";
   }
 
   return "(unknown)";
