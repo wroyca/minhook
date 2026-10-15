@@ -12,14 +12,14 @@
 #include <assert.h>
 
 /* A page of executable memory for machine code that a test writes. The
- * page is filled with int3 (CC), which the hooking engine takes for padding.
- * It follows a page of the same content that is not executable, so that
- * code at the start of the page has padding above it that the engine cannot
- * use.
+ * page is filled with int3 (CC), which the library takes for padding. It
+ * follows a page of the same content that is not executable, so that code
+ * at the start of the page has padding above it that the library can't use.
  */
 #define CODE_PAGE_SIZE 0x1000
 
-/* Allocate the page and copy the code, if any, to the offset.
+/* Allocate the page, copy the code, if any, to the offset, and return the
+ * page's address.
  */
 static uint8_t*
 code_allocate (size_t offset, const uint8_t* code, size_t size)
@@ -46,6 +46,8 @@ code_allocate (size_t offset, const uint8_t* code, size_t size)
   return p;
 }
 
+/* Free the page that code_allocate() returned.
+ */
 static void
 code_free (uint8_t* p)
 {

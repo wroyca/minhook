@@ -19,15 +19,14 @@
  * hot-patch   remove the hook while another thread is at the long jump in
  *             the hot patch area
  * many        toggle a hook with more threads than the initial capacity of
- *             the engine's thread list
+ *             the library's thread list
  * concurrent  toggle two hooks from two threads at once
  *
  * The inside, relay, and hot-patch scenarios also print where the other
  * thread is after each state change: target (within the code that the hook
- * overwrites), trampoline, or elsewhere. Note that the engine moves the
- * threads out of the trampoline when it disables all the hooks, applies the
- * queued changes, or removes a hook, but not when it disables a single
- * hook (the trampoline stays valid until the hook is removed).
+ * overwrites), trampoline, or elsewhere. Note that the library moves the
+ * threads out of the trampoline for every change except disabling a single
+ * hook since the trampoline stays valid until the hook is removed.
  */
 
 #define COUNT(a) (sizeof (a) / sizeof ((a)[0]))
@@ -345,7 +344,7 @@ hot_patch (void)
   HANDLE t = start_spinning (p + DETOUR_OFFSET);
 
   /* Disabling all the hooks looks the thread up in the hot patch area
-   * first, where it is not.
+   * first, where it isn't.
    */
   step ("disable-all",   mh_disable_hook (MH_ALL_HOOKS), t, target, tramp);
   step ("enable",        mh_enable_hook (target),        t, target, tramp);
@@ -384,7 +383,7 @@ detour_twice (int x)
   return original_twice (x) + 1000;
 }
 
-/* Note that the engine's thread list starts with room for 128 threads and
+/* Note that the library's thread list starts with room for 128 threads and
  * that disabling all the hooks looks up each thread in all of them.
  */
 static void

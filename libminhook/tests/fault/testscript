@@ -130,8 +130,8 @@ $* next-thread >>EOO
 
 : suspend-thread
 :
-: Test that enabling succeeds with threads that cannot be suspended,
-: which the engine leaves alone.
+: Test that enabling succeeds with threads that cannot be suspended, which
+: the library leaves alone.
 :
 $* suspend-thread >>EOO
   initialize MH_OK
@@ -149,7 +149,7 @@ $* suspend-thread >>EOO
 : thread-context
 :
 : Test that enabling succeeds with threads whose context cannot be read,
-: which the engine leaves where they are.
+: which the library leaves where they are.
 :
 $* thread-context >>EOO
   initialize MH_OK

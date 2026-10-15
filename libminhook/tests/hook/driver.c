@@ -15,9 +15,9 @@
 
 /* Usage: argv[0]
  *
- * Read commands from stdin, one per line, run each against the MinHook API,
- * and print its outcome on a line of its own: the status name for an API
- * call and the returned value for a call to a function. The commands are:
+ * Read commands from stdin, one per line, run each against the library, and
+ * print its outcome on a line of its own: the status name for an API call
+ * and the returned value for a call to a function. The commands are:
  *
  * initialize
  * uninitialize
@@ -33,10 +33,10 @@
  *
  * Targets are the functions a and b, data (a data object), unmapped (an
  * address outside the address space), reserved (a page of address space
- * without memory), and all (MH_ALL_HOOKS). Detours are
- * named after the targets and default to the target's own: the detours of a
- * and b add 1000 and 2000, respectively, to the result of the target's
- * original function, while data and unmapped are the addresses above.
+ * without memory), and all (MH_ALL_HOOKS). Detours are named after the
+ * targets and default to the target's own. The detours of a and b add 1000
+ * and 2000, respectively, to the result of the target's original function,
+ * and those of data and unmapped are the addresses above.
  *
  * The call command calls the target function, which goes through the hook
  * if it is enabled. The original command calls the trampoline that create
@@ -282,7 +282,7 @@ main (void)
                                               COUNT (detours),
                                               w[n == 3 ? 2 : 1]);
 
-      /* Note that MinHook stores the trampoline into the original through
+      /* Note that the library stores the trampoline into the original through
        * void**, the same as the address() conversion.
        */
       print_status (mh_create_hook (t->address,

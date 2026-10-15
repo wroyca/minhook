@@ -21,7 +21,7 @@
  * 0x208  dword 7
  * 0x20c  scratch dword, zeroed before each call
  *
- * Note that the rest of the page is int3, which the engine takes for
+ * Note that the rest of the page is int3, which the library takes for
  * padding. Note also that the helper function is within the reach of the
  * short branches of the target function.
  *

@@ -1,5 +1,5 @@
-# Hooking many functions. Note that the engine's hook list starts with room
-# for 32 hooks and that a 4K block of trampoline slots holds 63 of them on
+# Hooking many functions. Note that the library's hook list starts with room
+# for 32 hooks and that a 4 KiB block of trampoline slots holds 63 of them on
 # x64 and 127 on x86.
 #
 

@@ -313,7 +313,8 @@ $* e8 2b 00 00 00 c3 >>EOO
 
 : xbegin
 :
-: Test that xbegin, a relative branch with a rewrite of its own, is refused.
+: Test that xbegin, a relative branch that needs a rewrite of its own, is
+: refused.
 :
 {{
   $* c7 f8 00 00 00 00 c3 >'create MH_ERROR_UNSUPPORTED_FUNCTION' : near

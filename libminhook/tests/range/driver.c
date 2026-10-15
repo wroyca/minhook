@@ -10,7 +10,7 @@
 
 /* Usage: argv[0] <scenario>
  *
- * On x64 the engine allocates the trampoline of a hook within 1GB of the
+ * On x64 the library allocates the trampoline of a hook within 1 GiB of the
  * target, so that the relative jumps between the two reach. Run the
  * scenario with a target function far from the other code of the process
  * and print the outcome of each step on a line of its own. The scenarios
@@ -23,9 +23,9 @@
  * below-retry  as below with the first trampoline block allocation failing
  * reserved     hook the far function with the address space around it
  *              reserved
- * low          hook a function just above the first 1GB of the address
- *              space
- * high         hook a function within 1GB of the end of the address space
+ * low          hook a function one allocation granule above the first
+ *              1 GiB of the address space
+ * high         hook a function within 1 GiB of the end of the address space
  *
  * The target functions are mov eax, 42; ret and their detours add 1000 to
  * the result of the original function. The below scenarios also print
@@ -34,7 +34,7 @@
 
 #define COUNT(a) (sizeof (a) / sizeof ((a)[0]))
 
-/* The distance within which the engine allocates trampolines and the
+/* The distance within which the library allocates trampolines and the
  * allocation granularity.
  */
 #define RANGE       ((uintptr_t) 0x40000000)
@@ -78,8 +78,8 @@ call (void* p)
 
 static const uint8_t function_code[] = {0xB8, 0x2A, 0x00, 0x00, 0x00, 0xC3};
 
-/* Allocate a page with the function at the first address from 16TB up in
- * 1TB steps that is free, which is far from the other code of the process.
+/* Allocate a page with the function at the first free address from 16 TiB
+ * up in 1 TiB steps, which is far from the other code of the process.
  */
 static uint8_t*
 allocate_far (void)
@@ -280,8 +280,8 @@ hook_at (uint8_t* p)
   VirtualFree (p, 0, MEM_RELEASE);
 }
 
-/* Note that the first 1GB of the address space then reaches down to the
- * lowest address that the system allocates.
+/* The range below the function then reaches down to the lowest address
+ * that the system allocates.
  */
 static void
 hook_low (void)

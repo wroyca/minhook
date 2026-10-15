@@ -43,6 +43,7 @@ h{*}:
   install.subdirs = true
 }
 
-# Only the engine's sources include its internal headers.
+# Only the library's own sources include its internal headers, so we don't
+# install them.
 #
 h{buffer}@./ h{trampoline}@./: install = false

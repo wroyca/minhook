@@ -1,6 +1,7 @@
 import libs = libminhook%lib{minhook}
 
-# The engine only places trampolines within reach of their targets on x64.
+# The library only places trampolines within reach of their targets on x64,
+# so we only build and run this test there.
 #
 ./: exe{driver}: include = ($c.target.cpu == 'x86_64')
 

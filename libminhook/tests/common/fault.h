@@ -19,10 +19,9 @@
  *
  * We make a function fail by redirecting its entry in the import address
  * table of the module that contains the library to a wrapper. The wrapper
- * passes the number of calls that a test requests to skip on to the
- * function, then fails the number of calls that it requests to fail, the
- * way the function documents, and passes the rest on to the function
- * again.
+ * passes the calls that the test asks to skip on to the function, fails the
+ * calls that it asks to fail the way the function documents, and passes the
+ * rest on again.
  *
  * We also redirect CloseHandle(), which never fails, to count the thread
  * handles that the library holds (see fault_thread_handles).
@@ -55,7 +54,7 @@ struct fault_import
 static struct fault_import fault_imports[FAULT_COUNT];
 
 /* Number of the thread handles that NtGetNextThread() returned to the
- * library and that it has not closed yet. Note that the library closes no
+ * library and that it hasn't closed yet. Note that the library closes no
  * other handles.
  */
 static long fault_thread_handles;
@@ -96,7 +95,7 @@ fault_fail (enum fault_function f)
   return true;
 }
 
-/* The wrappers.
+/* The wrappers, each failing the way its function documents.
  */
 static HANDLE WINAPI
 fault_heap_create (DWORD o, SIZE_T i, SIZE_T m)
@@ -291,7 +290,7 @@ fault_redirect (void)
     }
   }
 
-  /* Make sure the library imports each function that we make fail.
+  /* Make sure the library imports each function that we redirect.
    */
   for (size_t i = 0; i != FAULT_COUNT; ++i)
     assert (fault_imports[i].function != NULL);

@@ -81,7 +81,7 @@ $* hot-patch >>EOO
 : many
 :
 : Test toggling a hook with more threads than the initial capacity of the
-: engine's thread list.
+: library's thread list.
 :
 $* many >>EOO
   initialize MH_OK

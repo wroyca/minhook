@@ -58,7 +58,7 @@ $* <'create a c' 2>"error: invalid command 'create a c'" != 0
 
   : count
   :
-  : Test that a call requires exactly a function and an integer.
+  : Test that a call without the integer is rejected.
   :
   $* <'call a' 2>"error: invalid command 'call a'" != 0
 

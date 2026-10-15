@@ -40,7 +40,7 @@
  * virtual-alloc       VirtualAlloc() when allocating a trampoline block
  *
  * After enabling, the scenarios that enable a single hook also print the
- * number of the thread handles that the library has not closed.
+ * number of the thread handles that the library hasn't closed.
  *
  * The functions a and b return x * 3 + 1 and (x ^ 0x55) - 7, respectively,
  * and their detours add 1000 and 2000 to the result of the original
@@ -371,7 +371,7 @@ next_thread (void)
   stop_threads ();
 }
 
-/* The thread functions fail for every thread, which the engine then
+/* The thread functions fail for every thread, which the library then
  * leaves alone.
  */
 static void
@@ -439,8 +439,8 @@ protect_uninitialize (void)
   print_result ("call", target_a (5));
 }
 
-/* On x64 the engine tries the next free region within reach, while on x86
- * it lets the system choose the address and has no alternative.
+/* On x64 the library tries the next free region within reach. On x86 it
+ * lets the system choose the address, so it has no other region to try.
  */
 static void
 virtual_alloc (void)
