@@ -234,13 +234,18 @@ static struct fault_import fault_imports[FAULT_COUNT] = {
 static void
 fault_redirect (void)
 {
-  /* Find the module through the address of one of the library's functions.
+  /* Find the module through the address of one of the library's string
+   * literals.
+   *
+   * Note that the address of a library function won't do: without the
+   * dllimport declaration (see libminhook/export.h) it is that of the import
+   * thunk in the calling module.
    */
   HMODULE m;
   {
-    enum mh_status (*f) (void) = &mh_initialize;
     const wchar_t* a;
-    memcpy (&a, &f, sizeof (a));
+    const char* n = mh_status_to_string (MH_OK);
+    memcpy (&a, &n, sizeof (a));
 
     BOOL r = GetModuleHandleExW (GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
                                  GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
