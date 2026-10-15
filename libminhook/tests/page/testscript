@@ -61,7 +61,36 @@
       protection execute-read readonly
       EOO
   }}
+
+  : execute
+  :
+  : Test that a hook's jump that extends into an executable page with
+  : another protection keeps the protection of each page.
+  :
+  $* execute-readwrite 31 c0 c3 >>EOO
+    create MH_OK
+    plain 0
+    hooked 1000
+    restored 0
+    removed 0
+    protection execute-read execute-readwrite
+    EOO
 }}
+
+: start
+:
+: Test that a hook's jump through the hot patch area at the end of an
+: executable page with another protection keeps the protection of each
+: page.
+:
+$* --start execute-readwrite 31 c0 c3 31 c0 c3 >>EOO
+  create MH_OK
+  plain 0
+  hooked 1000
+  restored 0
+  removed 0
+  protection execute-read execute-readwrite
+  EOO
 
 : arguments
 :
@@ -69,9 +98,8 @@
   : protection
   :
   {{
-    $*        2>'error: expected protection'          != 0 : missing
-    $* --start 2>'error: expected protection'          != 0 : start
-    $* bogus  2>"error: invalid protection 'bogus'"   != 0 : invalid
+    $*       2>'error: expected protection'        != 0 : missing
+    $* bogus 2>"error: invalid protection 'bogus'" != 0 : invalid
   }}
 
   : missing

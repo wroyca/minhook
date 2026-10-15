@@ -231,6 +231,22 @@ $* protect-uninitialize >>EOO
   call 16
   EOO
 
+: protect-page
+:
+: Test that enabling fails if the second page that the hook's jump extends
+: into cannot be made writable and leaves the first page as it was.
+:
+$* protect-page >>EOO
+  initialize MH_OK
+  create MH_OK
+  enable MH_ERROR_MEMORY_PROTECT
+  call 0
+  execute-read 1
+  enable MH_OK
+  call 3000
+  uninitialize MH_OK
+  EOO
+
 : virtual-alloc
 :
 : Test that creating a hook on x64 allocates the trampoline block in the

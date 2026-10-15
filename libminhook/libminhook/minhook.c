@@ -85,6 +85,10 @@ NtGetNextThread (HANDLE process,
   (THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT | THREAD_QUERY_INFORMATION |   \
    THREAD_SET_CONTEXT)
 
+/* Size of a page, which is the unit of the memory protection.
+ */
+#define PAGE_SIZE 0x1000
+
 /* Change that is being applied to the hooks. With ACTION_APPLY_QUEUED each
  * hook takes its queued state.
  */
@@ -457,6 +461,55 @@ unfreeze (struct frozen_threads* ts)
   HeapFree (heap, 0, ts->items);
 }
 
+/* Return the number of the code's bytes that are on the page of its first
+ * byte.
+ */
+static size_t
+first_page_size (const uint8_t* p, size_t n)
+{
+  size_t r = PAGE_SIZE - (uintptr_t) p % PAGE_SIZE;
+  return r < n ? r : n;
+}
+
+/* Make the code writable and store the previous protection of each of its
+ * pages. Return false if unable to, leaving the protection as it was.
+ *
+ * VirtualProtect() returns the previous protection of the first page only,
+ * so we change one page at a time since the pages may differ. The code that
+ * a hook patches is at most 7 bytes long and so spans two pages at most.
+ */
+static bool
+unprotect (uint8_t* p, size_t n, DWORD protect[2])
+{
+  size_t m = first_page_size (p, n);
+
+  if (!VirtualProtect (p, m, PAGE_EXECUTE_READWRITE, &protect[0]))
+    return false;
+
+  if (m != n &&
+      !VirtualProtect (p + m, n - m, PAGE_EXECUTE_READWRITE, &protect[1]))
+  {
+    VirtualProtect (p, m, protect[0], &protect[0]);
+    return false;
+  }
+
+  return true;
+}
+
+/* Restore the protection that unprotect() stored.
+ */
+static void
+reprotect (uint8_t* p, size_t n, const DWORD protect[2])
+{
+  size_t m = first_page_size (p, n);
+  DWORD o;
+
+  VirtualProtect (p, m, protect[0], &o);
+
+  if (m != n)
+    VirtualProtect (p + m, n - m, protect[1], &o);
+}
+
 /* Write the hook's jump into the target function or restore the original
  * code. Return MH_ERROR_MEMORY_PROTECT if unable to make the code writable.
  *
@@ -477,8 +530,8 @@ patch_hook (unsigned int pos, bool enable)
     n += sizeof (struct mh_jmp_rel_short);
   }
 
-  DWORD protect;
-  if (!VirtualProtect (p, n, PAGE_EXECUTE_READWRITE, &protect))
+  DWORD protect[2];
+  if (!unprotect (p, n, protect))
     return MH_ERROR_MEMORY_PROTECT;
 
   if (enable)
@@ -501,7 +554,7 @@ patch_hook (unsigned int pos, bool enable)
   else
     memcpy (p, h->backup, n);
 
-  VirtualProtect (p, n, protect, &protect);
+  reprotect (p, n, protect);
   FlushInstructionCache (GetCurrentProcess (), p, n);
 
   h->enabled = enable;

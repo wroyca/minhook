@@ -37,6 +37,8 @@
  * protect-uninitialize
  *                     VirtualProtect() when uninitializing with an enabled
  *                     hook
+ * protect-page        VirtualProtect() for the second page when enabling a
+ *                     hook whose jump extends into it
  * virtual-alloc       VirtualAlloc() when allocating a trampoline block
  *
  * After enabling, the scenarios that enable a single hook also print the
@@ -44,7 +46,7 @@
  *
  * The functions a and b return x * 3 + 1 and (x ^ 0x55) - 7, respectively,
  * and their detours add 1000 and 2000 to the result of the original
- * function.
+ * function. The function c returns 0 and its detour adds 3000.
  *
  * See common/fault.h for how we make the functions fail.
  */
@@ -81,6 +83,7 @@ typedef int target_function (int);
 
 static target_function* original_a;
 static target_function* original_b;
+static target_function* original_c;
 
 static int
 detour_a (int x)
@@ -92,6 +95,12 @@ static int
 detour_b (int x)
 {
   return original_b (x) + 2000;
+}
+
+static int
+detour_c (int x)
+{
+  return original_c (x) + 3000;
 }
 
 /* ISO C has no conversion between function and object pointers, so we
@@ -439,6 +448,55 @@ protect_uninitialize (void)
   print_result ("call", target_a (5));
 }
 
+/* The function c (xor eax, eax; ret) is at the end of an execute-read page
+ * that is followed by an execute-readwrite page, so the hook's jump extends
+ * into the second page. Print the protection of the first page after the
+ * failure.
+ */
+static void
+protect_page (void)
+{
+  uint8_t* p = (uint8_t*) VirtualAlloc (NULL,
+                                        2 * CODE_PAGE_SIZE,
+                                        MEM_COMMIT | MEM_RESERVE,
+                                        PAGE_EXECUTE_READWRITE);
+  assert (p != NULL);
+
+  const uint8_t code[] = {0x31, 0xC0, 0xC3};
+  uint8_t* c = p + CODE_PAGE_SIZE - sizeof (code);
+
+  memset (p, 0xCC, 2 * CODE_PAGE_SIZE);
+  memcpy (c, code, sizeof (code));
+
+  DWORD o;
+  BOOL r = VirtualProtect (p, CODE_PAGE_SIZE, PAGE_EXECUTE_READ, &o);
+  assert (r);
+
+  target_function* f;
+  memcpy (&f, &c, sizeof (f));
+
+  print_status ("initialize", mh_initialize ());
+  print_status ("create",
+                mh_create_hook (c,
+                                address (&detour_c),
+                                (void**) &original_c));
+  fault_next_after (FAULT_VIRTUAL_PROTECT, 1, 1);
+  print_status ("enable", mh_enable_hook (c));
+  print_result ("call", f (5));
+
+  MEMORY_BASIC_INFORMATION i;
+  SIZE_T n = VirtualQuery (p, &i, sizeof (i));
+  assert (n != 0);
+  printf ("execute-read %d\n", i.Protect == PAGE_EXECUTE_READ ? 1 : 0);
+
+  print_status ("enable", mh_enable_hook (c));
+  print_result ("call", f (5));
+  print_status ("uninitialize", mh_uninitialize ());
+
+  r = VirtualFree (p, 0, MEM_RELEASE);
+  assert (r);
+}
+
 /* On x64 the library tries the next free region within reach. On x86 it
  * lets the system choose the address, so it has no other region to try.
  */
@@ -472,6 +530,7 @@ static const struct scenario scenarios[] = {
   {"protect-all",          &protect_all},
   {"protect-remove",       &protect_remove},
   {"protect-uninitialize", &protect_uninitialize},
+  {"protect-page",         &protect_page},
   {"virtual-alloc",        &virtual_alloc}};
 
 int
