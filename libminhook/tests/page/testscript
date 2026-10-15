@@ -22,6 +22,16 @@
       protection execute-read noaccess
       EOO
 
+    : branch
+    :
+    : Test that a function whose branch continues it into the next page (jz
+    : over the ret) is refused.
+    :
+    $* noaccess 74 01 c3 >>EOO
+      create MH_ERROR_UNSUPPORTED_FUNCTION
+      protection execute-read noaccess
+      EOO
+
     : hot-patch
     :
     : Test that a function with room for a short jump is hooked through the

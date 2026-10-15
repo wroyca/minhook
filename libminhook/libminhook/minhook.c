@@ -89,10 +89,6 @@ NtGetNextThread (HANDLE process,
   (THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT | THREAD_QUERY_INFORMATION |   \
    THREAD_SET_CONTEXT)
 
-/* Size of a page, which is the unit of the memory protection.
- */
-#define PAGE_SIZE 0x1000
-
 /* Change that is being applied to the hooks. With ACTION_APPLY_QUEUED each
  * hook takes its queued state.
  */
@@ -586,7 +582,7 @@ unfreeze (struct frozen_threads* ts)
 static size_t
 first_page_size (const uint8_t* p, size_t n)
 {
-  size_t r = PAGE_SIZE - (uintptr_t) p % PAGE_SIZE;
+  size_t r = MH_PAGE_SIZE - (uintptr_t) p % MH_PAGE_SIZE;
   return r < n ? r : n;
 }
 

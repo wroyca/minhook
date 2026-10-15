@@ -44,6 +44,10 @@
 #  define MH_MEMORY_SLOT_SIZE 32
 #endif
 
+/* Size of a page, which is the unit of the memory protection.
+ */
+#define MH_PAGE_SIZE 0x1000
+
 /* Initialize the slot allocator. Call before allocating a slot.
  *
  * Note that the allocator keeps its blocks across initializations since

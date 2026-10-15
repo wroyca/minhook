@@ -355,6 +355,30 @@ relocate (struct builder* b,
   return true;
 }
 
+/* Copy the target's code at the address, up to the maximum instruction
+ * length, into the buffer and return its size. Copy only the code in
+ * executable memory and return 0 if there is none.
+ *
+ * Note that the code may extend into the next page, which may be data or
+ * not even readable. The maximum instruction length is less than a page,
+ * so the code spans two pages at most.
+ */
+static size_t
+copy_code (uint8_t* buf, uintptr_t address)
+{
+  if (!mh_executable_address ((const void*) address))
+    return 0;
+
+  size_t n = MH_PAGE_SIZE - address % MH_PAGE_SIZE;
+
+  if (n >= ZYDIS_MAX_INSTRUCTION_LENGTH ||
+      mh_executable_address ((const void*) (address + n)))
+    n = ZYDIS_MAX_INSTRUCTION_LENGTH;
+
+  memcpy (buf, (const void*) address, n);
+  return n;
+}
+
 /* Return true if the bytes are all the same padding byte (00, 90, or CC)
  * in executable memory.
  *
@@ -409,16 +433,17 @@ mh_create_trampoline (struct mh_trampoline* t)
     uintptr_t old_address = (uintptr_t) t->target + b.old_pos;
     uintptr_t new_address = (uintptr_t) t->trampoline + b.new_pos;
 
-    /* Note that the decoder may read up to the maximum instruction length
-     * past the address.
+    /* Decode the instruction from a copy of the code since the decoder
+     * may read up to the maximum instruction length past the address (see
+     * copy_code()). An instruction that doesn't fit into the copy is
+     * refused.
      */
+    uint8_t c[ZYDIS_MAX_INSTRUCTION_LENGTH];
+    size_t n = copy_code (c, old_address);
+
     instruction i;
-    if (ZYAN_FAILED (ZydisDecoderDecodeInstruction (
-                       &d,
-                       NULL,
-                       (const void*) old_address,
-                       ZYDIS_MAX_INSTRUCTION_LENGTH,
-                       &i)))
+    if (n == 0 ||
+        ZYAN_FAILED (ZydisDecoderDecodeInstruction (&d, NULL, c, n, &i)))
       return false;
 
     unsigned int size = i.length;
