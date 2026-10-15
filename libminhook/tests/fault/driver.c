@@ -39,6 +39,8 @@
  *                     hook
  * protect-page        VirtualProtect() for the second page when enabling a
  *                     hook whose jump extends into it
+ * protect-moved       VirtualProtect() when disabling a hook and all the
+ *                     hooks while another thread is in the trampoline
  * virtual-alloc       VirtualAlloc() when allocating a trampoline block
  * retire-alloc        HeapAlloc() when retiring the first trampoline
  * retire-grow         HeapReAlloc() when growing the retirement list
@@ -667,6 +669,132 @@ reclaim_heap (void)
   CloseHandle (take_heap);
 }
 
+/* Return the thread's instruction pointer.
+ */
+static uintptr_t
+thread_ip (HANDLE t)
+{
+  CONTEXT c;
+  c.ContextFlags = CONTEXT_CONTROL;
+
+  BOOL r = GetThreadContext (t, &c);
+  assert (r);
+
+#if defined(_M_X64) || defined(__x86_64__)
+  return (uintptr_t) c.Rip;
+#else
+  return (uintptr_t) c.Eip;
+#endif
+}
+
+static void
+set_thread_ip (HANDLE t, uintptr_t ip)
+{
+  CONTEXT c;
+  c.ContextFlags = CONTEXT_CONTROL;
+
+  BOOL r = GetThreadContext (t, &c);
+  assert (r);
+
+#if defined(_M_X64) || defined(__x86_64__)
+  c.Rip = ip;
+#else
+  c.Eip = (DWORD) ip;
+#endif
+
+  r = SetThreadContext (t, &c);
+  assert (r);
+}
+
+/* Print where the suspended thread is: at an offset into the trampoline or
+ * the target, or elsewhere.
+ */
+static void
+print_location (const char* step, HANDLE t, uint8_t* target, void* tramp)
+{
+  uintptr_t ip = thread_ip (t);
+  uintptr_t ta = (uintptr_t) target;
+  uintptr_t tr = (uintptr_t) tramp;
+
+  if (tr <= ip && ip < tr + 64)
+    printf ("%s trampoline+%d\n", step, (int) (ip - tr));
+  else if (ta <= ip && ip < ta + 5)
+    printf ("%s target+%d\n", step, (int) (ip - ta));
+  else
+    printf ("%s elsewhere\n", step);
+}
+
+/* The target is a loop (pause; jmp back) followed by nop and ret, so that
+ * the trampoline holds the loop, and the detour is the same loop. The
+ * other thread spins in the detour and we place it, suspended, at the
+ * relocated jmp in the trampoline (the second instruction boundary). A
+ * failed patch leaves the hook enabled, so the thread must stay where it is
+ * since the target's second boundary is within the hook's jump.
+ */
+static void
+protect_moved (void)
+{
+  const uint8_t c[] = {0xF3, 0x90, 0xEB, 0xFC, 0x90, 0xC3};
+  uint8_t* p = code_allocate (0x10, c, sizeof (c));
+  uint8_t* target = p + 0x10;
+  memcpy (p + 0x100, c, 4);
+
+  void* tramp;
+  print_status ("initialize", mh_initialize ());
+  print_status ("create", mh_create_hook (target, p + 0x100, &tramp));
+  print_status ("enable", mh_enable_hook (target));
+
+  LPTHREAD_START_ROUTINE s;
+  {
+    void* d = p + 0x100;
+    memcpy (&s, &d, sizeof (s));
+  }
+
+  HANDLE t = CreateThread (NULL, 0, s, NULL, 0, NULL);
+  assert (t != NULL);
+
+  /* Suspend the thread once it runs the loop, since a thread that is still
+   * starting may hold a lock that printing needs.
+   */
+  for (;;)
+  {
+    SuspendThread (t);
+    uintptr_t ip = thread_ip (t);
+
+    if (ip == (uintptr_t) p + 0x100 || ip == (uintptr_t) p + 0x102)
+      break;
+
+    ResumeThread (t);
+    Sleep (1);
+  }
+
+  set_thread_ip (t, (uintptr_t) tramp + 2);
+
+  fault_next (FAULT_VIRTUAL_PROTECT, 1);
+  print_status ("disable", mh_disable_hook (target));
+  print_location ("disable", t, target, tramp);
+
+  fault_next (FAULT_VIRTUAL_PROTECT, 1);
+  print_status ("disable-all", mh_disable_hook (MH_ALL_HOOKS));
+  print_location ("disable-all", t, target, tramp);
+
+  print_status ("disable", mh_disable_hook (target));
+  print_location ("disable", t, target, tramp);
+
+  /* Resume the thread before terminating it since Wine doesn't terminate a
+   * suspended thread. It then runs the target's loop.
+   */
+  ResumeThread (t);
+
+  BOOL r = TerminateThread (t, 0);
+  assert (r);
+  WaitForSingleObject (t, INFINITE);
+  CloseHandle (t);
+
+  print_status ("uninitialize", mh_uninitialize ());
+  code_free (p);
+}
+
 /* On x64 the library tries the next free region within reach. On x86 it
  * lets the system choose the address, so it has no other region to try.
  */
@@ -701,6 +829,7 @@ static const struct scenario scenarios[] = {
   {"protect-remove",       &protect_remove},
   {"protect-uninitialize", &protect_uninitialize},
   {"protect-page",         &protect_page},
+  {"protect-moved",        &protect_moved},
   {"virtual-alloc",        &virtual_alloc},
   {"retire-alloc",         &retire_alloc},
   {"retire-grow",          &retire_grow},

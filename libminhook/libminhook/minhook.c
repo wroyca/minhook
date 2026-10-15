@@ -52,11 +52,9 @@ mh_farproc_size_check[sizeof (FARPROC) == sizeof (void*) ? 1 : -1];
 #define INITIAL_HOOK_CAPACITY   32
 #define INITIAL_THREAD_CAPACITY 128
 
-/* Positions that denote no hook (see find_hook_entry()) and all the hooks
- * (see freeze()). They can share the value since no function takes both.
+/* Position that denotes no hook (see find_hook_entry()).
  */
 #define INVALID_HOOK_POS UINT_MAX
-#define ALL_HOOKS_POS    UINT_MAX
 
 /* Initial capacity of the retirement list and the position that denotes no
  * retirement (see find_retirement()).
@@ -371,13 +369,20 @@ find_new_ip (const struct hook_entry* h, uintptr_t ip)
   return 0;
 }
 
-/* If the suspended thread is within the code that the action on the hook
- * at the position (or on all the hooks) patches, then move its
- * instruction pointer to the equivalent instruction. Leave the thread where
- * it is if unable to read its context.
+/* If the suspended thread is within the code that the action on the hooks
+ * at the positions from b up to e patches, then move its instruction
+ * pointer to the equivalent instruction. Leave the thread where it is if
+ * unable to read its context.
+ *
+ * Note that the hooks must still be in their previous state, that is, call
+ * this function after patching their code but before recording their new
+ * state (see set_enabled()).
  */
 static void
-process_thread_ips (HANDLE thread, unsigned int pos, enum action a)
+process_thread_ips (HANDLE thread,
+                    unsigned int b,
+                    unsigned int e,
+                    enum action a)
 {
   CONTEXT c;
   c.ContextFlags = CONTEXT_CONTROL;
@@ -391,19 +396,9 @@ process_thread_ips (HANDLE thread, unsigned int pos, enum action a)
   DWORD* ip = &c.Eip;
 #endif
 
-  unsigned int n;
-
-  if (pos == ALL_HOOKS_POS)
+  for (unsigned int i = b; i < e; ++i)
   {
-    pos = 0;
-    n = hooks.size;
-  }
-  else
-    n = pos + 1;
-
-  for (; pos < n; ++pos)
-  {
-    const struct hook_entry* h = &hooks.items[pos];
+    const struct hook_entry* h = &hooks.items[i];
     bool enable = target_state (h, a);
 
     if (h->enabled == enable)
@@ -545,18 +540,21 @@ freeze (struct frozen_threads* ts)
 }
 
 /* Move the suspended threads that are within the code that the action on
- * the hook at the position (or on all the hooks) patches (see
+ * the hooks at the positions from b up to e patches (see
  * process_thread_ips()).
  */
 static void
-move_threads (const struct frozen_threads* ts, unsigned int pos, enum action a)
+move_threads (const struct frozen_threads* ts,
+              unsigned int b,
+              unsigned int e,
+              enum action a)
 {
   for (unsigned int i = 0; i < ts->size; ++i)
   {
     HANDLE t = ts->items[i];
 
     if (t != NULL)
-      process_thread_ips (t, pos, a);
+      process_thread_ips (t, b, e, a);
   }
 }
 
@@ -633,6 +631,7 @@ reprotect (uint8_t* p, size_t n, const DWORD protect[2])
 
 /* Write the hook's jump into the target function or restore the original
  * code. Return MH_ERROR_MEMORY_PROTECT if unable to make the code writable.
+ * Note that the hook's state stays as is (see set_enabled()).
  *
  * Note that we ignore the failure to restore the protection since the code
  * is patched by then.
@@ -678,13 +677,22 @@ patch_hook (unsigned int pos, bool enable)
   reprotect (p, n, protect);
   FlushInstructionCache (GetCurrentProcess (), p, n);
 
-  h->enabled = enable;
-  h->queue_enable = enable;
-
   return MH_OK;
 }
 
+/* Record the hook's new state once its code is patched.
+ */
+static void
+set_enabled (struct hook_entry* h, bool enable)
+{
+  h->enabled = enable;
+  h->queue_enable = enable;
+}
+
 /* Patch the hook with the process's other threads suspended.
+ *
+ * Note that we move the threads only once the code is patched: if patching
+ * fails, then the code stays as it was and so must the threads.
  */
 static enum mh_status
 patch_hook_frozen (unsigned int pos, bool enable, enum action a)
@@ -695,8 +703,14 @@ patch_hook_frozen (unsigned int pos, bool enable, enum action a)
   if (r != MH_OK)
     return r;
 
-  move_threads (&ts, pos, a);
   r = patch_hook (pos, enable);
+
+  if (r == MH_OK)
+  {
+    move_threads (&ts, pos, pos + 1, a);
+    set_enabled (&hooks.items[pos], enable);
+  }
+
   unfreeze (&ts);
   return r;
 }
@@ -731,19 +745,35 @@ patch_hooks (enum action a)
   if (r != MH_OK)
     return r;
 
-  move_threads (&ts, ALL_HOOKS_POS, a);
+  /* Patch the hooks up to the first that fails.
+   */
+  unsigned int e = first;
 
-  for (unsigned int i = first; i < hooks.size; ++i)
+  for (; e < hooks.size; ++e)
   {
-    bool enable = target_state (&hooks.items[i], a);
+    bool enable = target_state (&hooks.items[e], a);
 
-    if (hooks.items[i].enabled != enable)
+    if (hooks.items[e].enabled != enable)
     {
-      r = patch_hook (i, enable);
+      r = patch_hook (e, enable);
 
       if (r != MH_OK)
         break;
     }
+  }
+
+  /* Move the threads within the code of the patched hooks and record their
+   * new state (see patch_hook_frozen()).
+   */
+  move_threads (&ts, first, e, a);
+
+  for (unsigned int i = first; i < e; ++i)
+  {
+    struct hook_entry* h = &hooks.items[i];
+    bool enable = target_state (h, a);
+
+    if (h->enabled != enable)
+      set_enabled (h, enable);
   }
 
   unfreeze (&ts);

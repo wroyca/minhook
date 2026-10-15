@@ -247,6 +247,24 @@ $* protect-page >>EOO
   uninitialize MH_OK
   EOO
 
+: protect-moved
+:
+: Test that a failed patch leaves the threads where they are and that a
+: successful one moves them.
+:
+$* protect-moved >>EOO
+  initialize MH_OK
+  create MH_OK
+  enable MH_OK
+  disable MH_ERROR_MEMORY_PROTECT
+  disable trampoline+2
+  disable-all MH_ERROR_MEMORY_PROTECT
+  disable-all trampoline+2
+  disable MH_OK
+  disable target+2
+  uninitialize MH_OK
+  EOO
+
 : virtual-alloc
 :
 : Test that creating a hook on x64 allocates the trampoline block in the
