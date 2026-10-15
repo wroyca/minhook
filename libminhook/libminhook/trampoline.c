@@ -428,9 +428,19 @@ mh_create_trampoline (struct mh_trampoline* t)
       return false;
 
     /* Make sure the trampoline fits into the slot.
+     *
+     * On x86 it always does. Only a short branch grows when relocated, from
+     * 2 to at most 6 bytes, so the instructions within the first 4 bytes
+     * take at most 12. The last instruction is at most 15 bytes and the jump
+     * back to the rest of the target is 5, which is 32 in total, the size
+     * of the slot.
      */
+#if defined(_M_X64) || defined(__x86_64__)
     if (b.new_pos + size > TRAMPOLINE_MAX_SIZE)
       return false;
+#else
+    assert (b.new_pos + size <= TRAMPOLINE_MAX_SIZE);
+#endif
 
     /* The trampoline is complete once it covers the hook's jump, so it
      * holds at most one instruction for each of the jump's 5 bytes plus the

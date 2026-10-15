@@ -491,6 +491,21 @@ if ($c.target.cpu != 'x86_64')
     $* 66 0f 84 00 00 c3 >'create MH_ERROR_UNSUPPORTED_FUNCTION' : jcc
     $* 66 e8 00 00 c3    >'create MH_ERROR_UNSUPPORTED_FUNCTION' : call
   }}
+
+  : maximum
+  :
+  : Test the longest trampoline: two short conditional jumps, which grow to
+  : 6 bytes each, followed by a 15-byte instruction (nop with prefixes) and
+  : the jump back, which fill the slot exactly. One of the jumps is always
+  : taken, so the nop never runs.
+  :
+  $* 74 2e 75 2c 66 66 66 66 66 66 66 0f 1f 84 00 00 00 00 00 >>EOO
+    create MH_OK
+    plain 42
+    hooked 1042
+    restored 42
+    removed 42
+    EOO
 }}
 
 : arguments
