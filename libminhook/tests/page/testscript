@@ -1,0 +1,92 @@
+# Hooking functions next to a page boundary. See the driver for the layout
+# of the pages.
+#
+
+: end
+:
+: Test functions shorter than the hook's jump at the end of a page.
+:
+{{
+  : noaccess
+  :
+  : Test that the hook's jump doesn't extend into the next page if it is
+  : not accessible.
+  :
+  {{
+    : ret
+    :
+    : Test that a function without room for even a short jump is refused.
+    :
+    $* noaccess c3 >>EOO
+      create MH_ERROR_UNSUPPORTED_FUNCTION
+      protection execute-read noaccess
+      EOO
+
+    : hot-patch
+    :
+    : Test that a function with room for a short jump is hooked through the
+    : hot patch area.
+    :
+    $* noaccess 31 c0 c3 >>EOO
+      create MH_OK
+      plain 0
+      hooked 1000
+      restored 0
+      removed 0
+      protection execute-read noaccess
+      EOO
+  }}
+
+  : readonly
+  :
+  : Test that the hook's jump doesn't extend into the next page if it is
+  : data, even if it starts with padding bytes.
+  :
+  {{
+    : ret
+    :
+    $* readonly c3 >>EOO
+      create MH_ERROR_UNSUPPORTED_FUNCTION
+      protection execute-read readonly
+      EOO
+
+    : hot-patch
+    :
+    $* readonly 31 c0 c3 >>EOO
+      create MH_OK
+      plain 0
+      hooked 1000
+      restored 0
+      removed 0
+      protection execute-read readonly
+      EOO
+  }}
+}}
+
+: arguments
+:
+{{
+  : protection
+  :
+  {{
+    $*        2>'error: expected protection'          != 0 : missing
+    $* --start 2>'error: expected protection'          != 0 : start
+    $* bogus  2>"error: invalid protection 'bogus'"   != 0 : invalid
+  }}
+
+  : missing
+  :
+  : Test that the bytes are required.
+  :
+  $* noaccess 2>'error: expected bytes' != 0
+
+  : byte
+  :
+  : Test that a byte is two hex digits.
+  :
+  {{
+    $* noaccess 1ff 2>"error: invalid byte '1ff'" != 0 : long
+    $* noaccess f   2>"error: invalid byte 'f'"   != 0 : short
+    $* noaccess zz  2>"error: invalid byte 'zz'"  != 0 : digit
+  }}
+}}

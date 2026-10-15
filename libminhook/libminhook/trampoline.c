@@ -318,6 +318,19 @@ code_padding (const uint8_t* p, unsigned int n)
   return true;
 }
 
+/* Return true if the target's bytes from the offset up to the size are
+ * padding in executable memory. They follow the function and may be at the
+ * start of the next page, which may be data or not even readable, so we
+ * check the memory before reading it. The target is executable, so the
+ * whole range is if its last byte is.
+ */
+static bool
+target_padding (const uint8_t* p, unsigned int offset, unsigned int size)
+{
+  return mh_executable_address (p + size - 1) &&
+         code_padding (p + offset, size - offset);
+}
+
 bool
 mh_create_trampoline (struct mh_trampoline* t)
 {
@@ -400,11 +413,10 @@ mh_create_trampoline (struct mh_trampoline* t)
   const uint8_t* p = (const uint8_t*) t->target;
 
   if (b.old_pos < sizeof (struct mh_jmp_rel) &&
-      !code_padding (p + b.old_pos, sizeof (struct mh_jmp_rel) - b.old_pos))
+      !target_padding (p, b.old_pos, sizeof (struct mh_jmp_rel)))
   {
     if (b.old_pos < sizeof (struct mh_jmp_rel_short) &&
-        !code_padding (p + b.old_pos,
-                       sizeof (struct mh_jmp_rel_short) - b.old_pos))
+        !target_padding (p, b.old_pos, sizeof (struct mh_jmp_rel_short)))
       return false;
 
     if (!mh_executable_address (p - sizeof (struct mh_jmp_rel)))
