@@ -66,10 +66,19 @@ struct memory_block
  */
 static struct memory_block* blocks;
 
+#if defined(_M_X64) || defined(__x86_64__)
+/* The application address range and the allocation granularity, which
+ * stay the same for the life of the process.
+ */
+static SYSTEM_INFO system_info;
+#endif
+
 void
 mh_initialize_buffer (void)
 {
-  /* Nothing to do. */
+#if defined(_M_X64) || defined(__x86_64__)
+  GetSystemInfo (&system_info);
+#endif
 }
 
 void
@@ -243,12 +252,11 @@ get_memory_block (void* origin)
   struct memory_block* b;
 
 #if defined(_M_X64) || defined(__x86_64__)
-  SYSTEM_INFO si;
-  GetSystemInfo (&si);
+  const SYSTEM_INFO* si = &system_info;
 
   uintptr_t o = (uintptr_t) origin;
-  uintptr_t minimum = (uintptr_t) si.lpMinimumApplicationAddress;
-  uintptr_t maximum = (uintptr_t) si.lpMaximumApplicationAddress;
+  uintptr_t minimum = (uintptr_t) si->lpMinimumApplicationAddress;
+  uintptr_t maximum = (uintptr_t) si->lpMaximumApplicationAddress;
 
   /* Limit the range to MAX_MEMORY_RANGE around the origin and make room
    * for a whole block at the top.
@@ -273,10 +281,10 @@ get_memory_block (void* origin)
   }
 
 #if defined(_M_X64) || defined(__x86_64__)
-  b = allocate_block_below (origin, minimum, si.dwAllocationGranularity);
+  b = allocate_block_below (origin, minimum, si->dwAllocationGranularity);
 
   if (b == NULL)
-    b = allocate_block_above (origin, maximum, si.dwAllocationGranularity);
+    b = allocate_block_above (origin, maximum, si->dwAllocationGranularity);
 #else
   /* On x86 a block can be anywhere.
    */
