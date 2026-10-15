@@ -294,6 +294,18 @@ $* e8 2b 00 00 00 c3 >>EOO
     removed 0
     EOO
 
+  : internal-self
+  :
+  : Test a conditional jump to itself, which is never taken (clc; jc).
+  :
+  $* f8 72 fe b8 07 00 00 00 c3 >>EOO
+    create MH_OK
+    plain 7
+    hooked 1007
+    restored 7
+    removed 7
+    EOO
+
   : backward-growth
   :
   : Test that a conditional jump back over an instruction that grows when
