@@ -87,6 +87,9 @@ mh_initialize (void);
  *
  * If unable to disable the hooks (see mh_disable_hook()), then return that
  * status and leave the library initialized.
+ *
+ * Note that this frees the trampolines. See mh_remove_hook() for what this
+ * means for the threads inside a call that a trampoline makes.
  */
 LIBMINHOOK_SYMEXPORT enum mh_status
 mh_uninitialize (void);
@@ -132,6 +135,12 @@ mh_create_hook_api (const wchar_t* module,
  *
  * If unable to disable the hook (see mh_disable_hook()), then return that
  * status and keep the hook enabled.
+ *
+ * Note that removing the hook frees its trampoline. If the instructions that
+ * the hook overwrites include a call, then the trampoline makes that call
+ * and a thread inside the callee returns into the trampoline. We don't walk
+ * the threads' stacks to find such return addresses, so the caller must
+ * make sure that no thread is inside such a call when removing the hook.
  */
 LIBMINHOOK_SYMEXPORT enum mh_status
 mh_remove_hook (void* target);
