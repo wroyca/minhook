@@ -736,13 +736,9 @@ remove_hook (void* target)
   return MH_OK;
 }
 
-/* Note that we process the threads for enabling in both cases, the same as
- * MinHook. So disabling a single hook leaves the threads that are within
- * its trampoline there, which stays valid until mh_remove_hook() moves them
- * out and frees it.
- *
- * @@ A thread that is suspended on the long jump in the hot patch area
- *    stays there and runs the restored padding.
+/* Note that MinHook processes the threads for enabling in both cases. We
+ * process them for the actual change since disabling restores the padding
+ * under a thread that is suspended on the long jump in the hot patch area.
  */
 static enum mh_status
 enable_hook (void* target, bool enable)
@@ -761,7 +757,9 @@ enable_hook (void* target, bool enable)
   if (hooks.items[pos].enabled == enable)
     return enable ? MH_ERROR_ENABLED : MH_ERROR_DISABLED;
 
-  return patch_hook_frozen (pos, enable, ACTION_ENABLE);
+  return patch_hook_frozen (pos,
+                            enable,
+                            enable ? ACTION_ENABLE : ACTION_DISABLE);
 }
 
 static enum mh_status

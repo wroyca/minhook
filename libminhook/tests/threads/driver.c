@@ -16,17 +16,15 @@
  * inside      enable and disable the hook while another thread runs a loop
  *             within the code that the hook overwrites
  * relay       remove the hook while another thread is at the x64 relay
- * hot-patch   remove the hook while another thread is at the long jump in
- *             the hot patch area
+ * hot-patch   disable and remove the hook while another thread is at the
+ *             long jump in the hot patch area
  * many        toggle a hook with more threads than the initial capacity of
  *             the library's thread list
  * concurrent  toggle two hooks from two threads at once
  *
  * The inside, relay, and hot-patch scenarios also print where the other
  * thread is after each state change: target (within the code that the hook
- * overwrites), trampoline, or elsewhere. Note that the library moves the
- * threads out of the trampoline for every change except disabling a single
- * hook since the trampoline stays valid until the hook is removed.
+ * overwrites), trampoline, or elsewhere.
  */
 
 #define COUNT(a) (sizeof (a) / sizeof ((a)[0]))
@@ -219,10 +217,11 @@ spin (void)
 
 /* The target is the loop followed by nop and ret, so that the loop is
  * within the code that the hook overwrites. The detour is a loop of its own
- * that the scenarios never run.
+ * that the scenarios never run. The other target is mov eax, 1; ret.
  */
 #define TARGET_OFFSET 0x10
 #define DETOUR_OFFSET 0x100
+#define OTHER_OFFSET  0x200
 
 static uint8_t*
 allocate_loops (void)
@@ -258,8 +257,18 @@ inside (void)
   uint8_t* target = p + TARGET_OFFSET;
   void* tramp;
 
+  const uint8_t o[] = {0xB8, 0x01, 0x00, 0x00, 0x00, 0xC3};
+  memcpy (p + OTHER_OFFSET, o, sizeof (o));
+
   print_status ("initialize", mh_initialize ());
   print_status ("create", mh_create_hook (target, p + DETOUR_OFFSET, &tramp));
+
+  /* Create and enable another hook. Applying the target's queued changes
+   * leaves it as is.
+   */
+  print_status ("create-other",
+                mh_create_hook (p + OTHER_OFFSET, p + DETOUR_OFFSET, NULL));
+  print_status ("enable-other", mh_enable_hook (p + OTHER_OFFSET));
 
   HANDLE t = start_spinning (target);
 
@@ -323,8 +332,8 @@ relay (void)
 /* The target is a short jump to a ret, followed by code that is not
  * padding, so the hook overwrites it with a short jump to a long one in the
  * padding above it. The other thread spins elsewhere and we place it,
- * suspended, at the long jump. Removing the hook then moves it to the
- * target.
+ * suspended, at the long jump. Disabling the hook then moves it to the
+ * target, and so does removing the hook.
  */
 static void
 hot_patch (void)
@@ -348,6 +357,20 @@ hot_patch (void)
    */
   step ("disable-all",   mh_disable_hook (MH_ALL_HOOKS), t, target, tramp);
   step ("enable",        mh_enable_hook (target),        t, target, tramp);
+
+  /* Return the thread to its loop before resuming it since the target
+   * would return from the thread.
+   */
+  SuspendThread (t);
+  set_thread_ip (t, (uintptr_t) target - 5);
+
+  print_status ("disable", mh_disable_hook (target));
+  print_location ("disable", t, target, tramp);
+
+  set_thread_ip (t, (uintptr_t) p + DETOUR_OFFSET);
+  ResumeThread (t);
+
+  print_status ("enable", mh_enable_hook (target));
 
   SuspendThread (t);
   set_thread_ip (t, (uintptr_t) target - 5);

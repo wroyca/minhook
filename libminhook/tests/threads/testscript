@@ -16,15 +16,17 @@ $* spin >>EOO
 :
 : Test that the state changes move a thread that runs within the code that
 : the hook overwrites to the equivalent instruction in the trampoline and
-: back, except for disabling a single hook.
+: back.
 :
 $* inside >>EOO
   initialize MH_OK
   create MH_OK
+  create-other MH_OK
+  enable-other MH_OK
   enable MH_OK
   enable trampoline
   disable MH_OK
-  disable trampoline
+  disable target
   enable MH_OK
   enable trampoline
   disable-all MH_OK
@@ -62,8 +64,8 @@ if ($c.target.cpu == 'x86_64')
 
 : hot-patch
 :
-: Test that removing the hook moves a thread at the long jump in the hot
-: patch area to the target.
+: Test that disabling and removing the hook move a thread at the long jump
+: in the hot patch area to the target.
 :
 $* hot-patch >>EOO
   initialize MH_OK
@@ -73,6 +75,9 @@ $* hot-patch >>EOO
   disable-all elsewhere
   enable MH_OK
   enable elsewhere
+  disable MH_OK
+  disable target
+  enable MH_OK
   remove MH_OK
   remove target
   uninitialize MH_OK
