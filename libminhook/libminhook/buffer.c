@@ -30,6 +30,7 @@
 
 #include <windows.h>
 
+#include <assert.h>
 #include <stdint.h>
 
 /* Size of a block (the VirtualAlloc() page size).
@@ -110,15 +111,22 @@ find_previous_free_region (void* address, uintptr_t minimum, DWORD granularity)
 
   while (a >= minimum)
   {
+    /* The address is between the minimum and the origin, both within the
+     * user address space, so the query succeeds.
+     */
     MEMORY_BASIC_INFORMATION i;
-    if (VirtualQuery ((void*) a, &i, sizeof (i)) == 0)
-      break;
+    SIZE_T n = VirtualQuery ((void*) a, &i, sizeof (i));
+    assert (n != 0);
+    (void) n;
 
     if (i.State == MEM_FREE)
       return (void*) a;
 
-    if ((uintptr_t) i.AllocationBase < granularity)
-      break;
+    /* The system allocates nothing below the minimum application address,
+     * which is the allocation granularity, so the region's allocation base
+     * is at least that and the next address doesn't wrap around.
+     */
+    assert ((uintptr_t) i.AllocationBase >= granularity);
 
     a = (uintptr_t) i.AllocationBase - granularity;
   }
@@ -139,9 +147,13 @@ find_next_free_region (void* address, uintptr_t maximum, DWORD granularity)
 
   while (a <= maximum)
   {
+    /* The address is between the origin and the maximum, both within the
+     * user address space, so the query succeeds.
+     */
     MEMORY_BASIC_INFORMATION i;
-    if (VirtualQuery ((void*) a, &i, sizeof (i)) == 0)
-      break;
+    SIZE_T n = VirtualQuery ((void*) a, &i, sizeof (i));
+    assert (n != 0);
+    (void) n;
 
     if (i.State == MEM_FREE)
       return (void*) a;

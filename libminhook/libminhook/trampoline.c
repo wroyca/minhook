@@ -28,6 +28,7 @@
 
 #include <libminhook/trampoline.h>
 
+#include <assert.h>
 #include <string.h> /* memcpy() */
 
 #include <libminhook/buffer.h>
@@ -348,8 +349,11 @@ mh_create_trampoline (struct mh_trampoline* t)
     if (b.new_pos + size > TRAMPOLINE_MAX_SIZE)
       return false;
 
-    if (t->ip_count >= sizeof (t->old_ips))
-      return false;
+    /* The trampoline is complete once it covers the hook's jump, so it
+     * holds at most one instruction for each of the jump's 5 bytes and the
+     * jump back to the rest of the target, which fit into the boundaries.
+     */
+    assert (t->ip_count < sizeof (t->old_ips));
 
     t->old_ips[t->ip_count] = b.old_pos;
     t->new_ips[t->ip_count] = b.new_pos;
