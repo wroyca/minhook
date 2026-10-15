@@ -1,0 +1,5 @@
+import libs = libminhook%lib{minhook}
+
+exe{driver}: {h c}{**} ../common/h{code fault} $libs testscript
+
+c.poptions =+ "-I$src_root"

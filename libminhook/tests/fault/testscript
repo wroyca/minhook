@@ -1,0 +1,314 @@
+# Failures of the Win32 functions that the library calls. See the driver for
+# how we make them fail.
+#
+
+: heap-create
+:
+: Test that initializing fails without the private heap and succeeds
+: afterwards.
+:
+$* heap-create >>EOO
+  initialize MH_ERROR_MEMORY_ALLOC
+  initialize MH_OK
+  uninitialize MH_OK
+  EOO
+
+: hook-alloc
+:
+: Test that creating the first hook fails without room for the hook list
+: and succeeds afterwards.
+:
+$* hook-alloc >>EOO
+  initialize MH_OK
+  create MH_ERROR_MEMORY_ALLOC
+  create MH_OK
+  enable MH_OK
+  call 1016
+  uninitialize MH_OK
+  EOO
+
+: hook-grow
+:
+: Test that creating a hook fails if the full hook list cannot grow and
+: succeeds afterwards.
+:
+$* hook-grow >>EOO
+  initialize MH_OK
+  created 32
+  create MH_ERROR_MEMORY_ALLOC
+  create MH_OK
+  uninitialize MH_OK
+  EOO
+
+: hook-shrink
+:
+: Test that removing a hook succeeds if the hook list cannot shrink.
+:
+$* hook-shrink >>EOO
+  initialize MH_OK
+  created 65
+  remove MH_OK
+  removed 64
+  uninitialize MH_OK
+  EOO
+
+: thread-alloc
+:
+: Test that enabling fails without room for the thread list and leaves
+: the hook disabled.
+:
+$* thread-alloc >>EOO
+  initialize MH_OK
+  create MH_OK
+  enable MH_ERROR_MEMORY_ALLOC
+  call 16
+  disable MH_ERROR_DISABLED
+  enable MH_OK
+  call 1016
+  uninitialize MH_OK
+  EOO
+
+: thread-grow
+:
+: Test that enabling fails if the full thread list cannot grow.
+:
+$* thread-grow >>EOO
+  initialize MH_OK
+  create MH_OK
+  enable MH_ERROR_MEMORY_ALLOC
+  call 16
+  disable MH_ERROR_DISABLED
+  enable MH_OK
+  call 1016
+  uninitialize MH_OK
+  EOO
+
+: snapshot
+:
+: Test that enabling one hook and all of them fail without the thread
+: snapshot.
+:
+$* snapshot >>EOO
+  initialize MH_OK
+  create MH_OK
+  enable MH_ERROR_MEMORY_ALLOC
+  call 16
+  disable MH_ERROR_DISABLED
+  enable MH_OK
+  call 1016
+  uninitialize MH_OK
+  initialize MH_OK
+  create MH_OK
+  enable-all MH_ERROR_MEMORY_ALLOC
+  call 16
+  uninitialize MH_OK
+  EOO
+
+: thread-first
+:
+: Test that enabling fails if the snapshot's first thread cannot be
+: read.
+:
+$* thread-first >>EOO
+  initialize MH_OK
+  create MH_OK
+  enable MH_ERROR_MEMORY_ALLOC
+  call 16
+  disable MH_ERROR_DISABLED
+  enable MH_OK
+  call 1016
+  uninitialize MH_OK
+  EOO
+
+: thread-next
+:
+: Test that enabling fails if the snapshot's next thread cannot be read.
+:
+$* thread-next >>EOO
+  initialize MH_OK
+  create MH_OK
+  enable MH_ERROR_MEMORY_ALLOC
+  call 16
+  disable MH_ERROR_DISABLED
+  enable MH_OK
+  call 1016
+  uninitialize MH_OK
+  EOO
+
+: open-thread
+:
+: Test that enabling succeeds with threads that cannot be opened, which
+: the engine leaves alone.
+:
+$* open-thread >>EOO
+  initialize MH_OK
+  create MH_OK
+  enable MH_OK
+  call 1016
+  disable MH_OK
+  enable MH_OK
+  call 1016
+  uninitialize MH_OK
+  EOO
+
+: suspend-thread
+:
+: Test that enabling succeeds with threads that cannot be suspended,
+: which the engine leaves alone.
+:
+$* suspend-thread >>EOO
+  initialize MH_OK
+  create MH_OK
+  enable MH_OK
+  call 1016
+  disable MH_OK
+  enable MH_OK
+  call 1016
+  uninitialize MH_OK
+  EOO
+
+: thread-context
+:
+: Test that enabling succeeds with threads whose context cannot be read,
+: which the engine leaves where they are.
+:
+$* thread-context >>EOO
+  initialize MH_OK
+  create MH_OK
+  enable MH_OK
+  call 1016
+  disable MH_OK
+  enable MH_OK
+  call 1016
+  uninitialize MH_OK
+  EOO
+
+: protect-enable
+:
+: Test that enabling fails if the target cannot be made writable and
+: leaves the hook disabled.
+:
+$* protect-enable >>EOO
+  initialize MH_OK
+  create MH_OK
+  enable MH_ERROR_MEMORY_PROTECT
+  call 16
+  disable MH_ERROR_DISABLED
+  enable MH_OK
+  call 1016
+  uninitialize MH_OK
+  EOO
+
+: protect-all
+:
+: Test that enabling all the hooks stops at the first that cannot be
+: patched.
+:
+$* protect-all >>EOO
+  initialize MH_OK
+  create-a MH_OK
+  create-b MH_OK
+  enable-all MH_ERROR_MEMORY_PROTECT
+  call-a 16
+  call-b 73
+  enable-all MH_OK
+  call-a 1016
+  call-b 2073
+  uninitialize MH_OK
+  EOO
+
+: protect-remove
+:
+: Test that removing an enabled hook fails if the target cannot be made
+: writable and leaves the hook enabled.
+:
+$* protect-remove >>EOO
+  initialize MH_OK
+  create MH_OK
+  enable MH_OK
+  remove MH_ERROR_MEMORY_PROTECT
+  call 1016
+  remove MH_OK
+  call 16
+  uninitialize MH_OK
+  EOO
+
+: protect-uninitialize
+:
+: Test that uninitializing fails if an enabled hook cannot be disabled
+: and leaves the library initialized.
+:
+$* protect-uninitialize >>EOO
+  initialize MH_OK
+  create MH_OK
+  enable MH_OK
+  uninitialize MH_ERROR_MEMORY_PROTECT
+  call 1016
+  uninitialize MH_OK
+  call 16
+  EOO
+
+: thread-entry
+:
+: Test that enabling skips a thread entry that doesn't contain the owner
+: process.
+:
+$* thread-entry >>EOO
+  initialize MH_OK
+  create MH_OK
+  enable MH_OK
+  call 1016
+  uninitialize MH_OK
+  EOO
+
+: resume-thread
+:
+: Test that enabling succeeds if a suspended thread cannot be opened for
+: resuming, which then stays suspended.
+:
+$* resume-thread >>EOO
+  initialize MH_OK
+  create MH_OK
+  enable MH_OK
+  suspended 1
+  call 1016
+  uninitialize MH_OK
+  EOO
+
+: virtual-alloc
+:
+: Test that creating a hook on x64 allocates the trampoline block in the
+: next free region if one cannot be allocated and fails on x86.
+:
+if ($c.target.cpu == 'x86_64')
+{
+  $* virtual-alloc >>EOO
+    initialize MH_OK
+    create MH_OK
+    uninitialize MH_OK
+    EOO
+}
+else
+{
+  $* virtual-alloc >>EOO
+    initialize MH_OK
+    create MH_ERROR_MEMORY_ALLOC
+    uninitialize MH_OK
+    EOO
+}
+
+: invalid
+:
+{{
+  : missing
+  :
+  : Test that the scenario is required.
+  :
+  $* 2>'error: expected scenario' != 0
+
+  : unknown
+  :
+  : Test that an unknown scenario is rejected.
+  :
+  $* bogus 2>"error: invalid scenario 'bogus'" != 0
+}}
