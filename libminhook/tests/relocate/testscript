@@ -282,6 +282,21 @@ $* e8 2b 00 00 00 c3 >>EOO
   :
   $* 31 c9 e3 2c >'create MH_ERROR_UNSUPPORTED_FUNCTION'
 
+  : loope
+  :
+  $* 31 c9 e1 2c >'create MH_ERROR_UNSUPPORTED_FUNCTION'
+
+  : loopne
+  :
+  $* 31 c9 e0 2c >'create MH_ERROR_UNSUPPORTED_FUNCTION'
+
+  : address-size
+  :
+  : Test jecxz with the address size prefix, which makes it jcxz on x86 and
+  : jecxz on x64.
+  :
+  $* 31 c9 67 e3 2b >'create MH_ERROR_UNSUPPORTED_FUNCTION'
+
   : jecxz-internal
   :
   : Test jecxz within the code that the hook overwrites. Both of its
@@ -294,6 +309,15 @@ $* e8 2b 00 00 00 c3 >>EOO
     restored 0
     removed 0
     EOO
+}}
+
+: xbegin
+:
+: Test that xbegin, a relative branch with a rewrite of its own, is refused.
+:
+{{
+  $* c7 f8 00 00 00 00 c3 >'create MH_ERROR_UNSUPPORTED_FUNCTION' : near
+  $* 66 c7 f8 00 00 c3    >'create MH_ERROR_UNSUPPORTED_FUNCTION' : operand-size
 }}
 
 : invalid
@@ -375,6 +399,20 @@ if ($c.target.cpu == 'x86_64')
       removed 42
       EOO
 
+    : vex
+    :
+    : Test a VEX-encoded RIP-relative instruction (vmovd xmm0, [rip+...])
+    : after a conditional jump that is always taken, so that the test
+    : relocates the instruction without running it.
+    :
+    $* 31 c0 74 2c c5 f9 6e 05 ec 01 00 00 c3 >>EOO
+      create MH_OK
+      plain 42
+      hooked 1042
+      restored 42
+      removed 42
+      EOO
+
     : address-size
     :
     : Test that a RIP-relative instruction with the address size prefix
@@ -389,6 +427,23 @@ if ($c.target.cpu == 'x86_64')
   : Each conditional jump grows to 16 bytes.
   :
   $* 74 2e 74 2c 74 2a >'create MH_ERROR_UNSUPPORTED_FUNCTION'
+}}
+
+: i386
+:
+if ($c.target.cpu != 'x86_64')
+{{
+  : operand-size
+  :
+  : Test that relative branches with the 16-bit operand size, which
+  : truncate the instruction pointer to 16 bits, are refused.
+  :
+  {{
+    $* 66 e9 00 00       >'create MH_ERROR_UNSUPPORTED_FUNCTION' : jmp
+    $* 66 eb 00 c3       >'create MH_ERROR_UNSUPPORTED_FUNCTION' : jmp-short
+    $* 66 0f 84 00 00 c3 >'create MH_ERROR_UNSUPPORTED_FUNCTION' : jcc
+    $* 66 e8 00 00 c3    >'create MH_ERROR_UNSUPPORTED_FUNCTION' : call
+  }}
 }}
 
 : arguments

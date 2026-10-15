@@ -1,4 +1,6 @@
-lib{minhook}: {h c}{** -version} h{version}
+import impl_libs = libzydis%lib{zydis}
+
+lib{minhook}: {h c}{** -version} h{version} $impl_libs
 
 h{version}: in{version} $src_root/manifest
 
@@ -39,5 +41,4 @@ h{*}:
 
 # Only the engine's sources include its internal headers.
 #
-h{buffer}@./ h{trampoline}@./                 \
-h{hde32}@./ h{hde64}@./ h{table32}@./ h{table64}@./: install = false
+h{buffer}@./ h{trampoline}@./: install = false

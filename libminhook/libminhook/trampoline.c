@@ -31,54 +31,26 @@
 #include <assert.h>
 #include <string.h> /* memcpy() */
 
+#include <Zydis/Zydis.h>
+
 #include <libminhook/buffer.h>
 
+typedef ZydisDecodedInstruction instruction;
+
 #if defined(_M_X64) || defined(__x86_64__)
-#  include <libminhook/hde64.h>
-
-typedef struct hde64_instruction instruction;
-
-#  define INSTRUCTION_ERROR HDE64_F_ERROR
-
-static inline unsigned int
-decode (const void* code, instruction* i)
-{
-  return hde64_disasm (code, i);
-}
+#  define MACHINE_MODE ZYDIS_MACHINE_MODE_LONG_64
+#  define STACK_WIDTH  ZYDIS_STACK_WIDTH_64
 
 /* Maximum size of the trampoline. The relay follows it in the same slot.
  */
 #  define TRAMPOLINE_MAX_SIZE                                                \
   (MH_MEMORY_SLOT_SIZE - sizeof (struct mh_jmp_abs))
 #else
-#  include <libminhook/hde32.h>
-
-typedef struct hde32_instruction instruction;
-
-#  define INSTRUCTION_ERROR HDE32_F_ERROR
-
-static inline unsigned int
-decode (const void* code, instruction* i)
-{
-  return hde32_disasm (code, i);
-}
+#  define MACHINE_MODE ZYDIS_MACHINE_MODE_LEGACY_32
+#  define STACK_WIDTH  ZYDIS_STACK_WIDTH_32
 
 #  define TRAMPOLINE_MAX_SIZE MH_MEMORY_SLOT_SIZE
 #endif
-
-/* Sign-extend the 8-bit or 32-bit relative operand to an address offset.
- */
-static inline uintptr_t
-offset8 (uint8_t v)
-{
-  return (uintptr_t) (intptr_t) (int8_t) v;
-}
-
-static inline uintptr_t
-offset32 (uint32_t v)
-{
-  return (uintptr_t) (intptr_t) (int32_t) v;
-}
 
 /* Trampoline builder state.
  */
@@ -151,19 +123,6 @@ encode_jcc (struct builder* b,
   return sizeof (j);
 }
 
-#if defined(_M_X64) || defined(__x86_64__)
-/* Return the size of the instruction's immediate operands. Note that the
- * HDE64_F_IMM* flags are the sizes shifted left by 2 and enter has two
- * immediates.
- */
-static unsigned int
-immediate_size (const instruction* i)
-{
-  return (i->flags & (HDE64_F_IMM8  | HDE64_F_IMM16 |
-                      HDE64_F_IMM32 | HDE64_F_IMM64)) >> 2;
-}
-#endif
-
 /* Return true if the destination is within the part of the target that
  * the hook overwrites.
  */
@@ -172,6 +131,38 @@ internal (const struct builder* b, uintptr_t dest)
 {
   uintptr_t t = (uintptr_t) b->trampoline->target;
   return t <= dest && dest < t + sizeof (struct mh_jmp_rel);
+}
+
+/* Return true if the instruction is jcc (7x or 0F 8x).
+ *
+ * We go by the opcode since the conditional branch category also includes
+ * instructions such as xbegin.
+ */
+static bool
+jcc (const instruction* i)
+{
+  return (i->opcode_map == ZYDIS_OPCODE_MAP_DEFAULT &&
+          (i->opcode & 0xF0) == 0x70) ||
+         (i->opcode_map == ZYDIS_OPCODE_MAP_0F &&
+          (i->opcode & 0xF0) == 0x80);
+}
+
+/* Return true if the instruction is loopne, loope, loop, or jcxz/jecxz/
+ * jrcxz (E0 to E3).
+ */
+static bool
+loop (const instruction* i)
+{
+  return i->opcode_map == ZYDIS_OPCODE_MAP_DEFAULT &&
+         (i->opcode & 0xFC) == 0xE0;
+}
+
+/* Return the destination of the relative branch at the address.
+ */
+static uintptr_t
+branch_destination (const instruction* i, uintptr_t address)
+{
+  return address + i->length + (uintptr_t) (intptr_t) i->raw.imm[0].value.s;
 }
 
 /* Rewrite the instruction at the address in the target for the address in
@@ -189,6 +180,8 @@ relocate (struct builder* b,
 {
   *code = (const void*) old_address;
 
+  bool branch = i->raw.imm[0].is_relative;
+
   if (b->old_pos >= sizeof (struct mh_jmp_rel))
   {
     /* The trampoline is long enough, so complete it with the jump to the
@@ -198,52 +191,55 @@ relocate (struct builder* b,
     *size = encode_jmp (b, old_address, new_address);
     b->finished = true;
   }
-#if defined(_M_X64) || defined(__x86_64__)
-  else if ((i->modrm & 0xC7) == 0x05)
+  else if (branch && i->operand_width == 16)
   {
-    /* RIP-relative addressing (ModR/M 00???101). Adjust the displacement,
-     * which precedes the immediate operands, for the new address.
-     *
-     * HDE decodes the address size prefix (67) as 16-bit addressing, which
-     * has no displacement for this ModR/M. Refuse such an instruction since
-     * its displacement position is unknown.
+    /* A relative branch with the 16-bit operand size truncates the
+     * instruction pointer to 16 bits, which the rewritten branch cannot
+     * reproduce.
      */
-    if ((i->flags & HDE64_F_DISP32) == 0)
+    return false;
+  }
+#if defined(_M_X64) || defined(__x86_64__)
+  else if ((i->attributes & ZYDIS_ATTRIB_HAS_MODRM) != 0 &&
+           i->raw.modrm.mod == 0                       &&
+           i->raw.modrm.rm == 5)
+  {
+    /* RIP-relative addressing (ModR/M 00???101). Adjust the displacement
+     * for the new address.
+     *
+     * The address size prefix (67) makes the addressing EIP-relative,
+     * which truncates the address to 32 bits. We refuse such an
+     * instruction.
+     */
+    if (i->address_width != 64)
       return false;
 
-    uint32_t d = (uint32_t) ((old_address + i->len +
-                              offset32 (i->disp.disp32)) -
-                             (new_address + i->len));
+    uint32_t d = (uint32_t) ((old_address + i->length +
+                              (uintptr_t) (intptr_t) i->raw.disp.value) -
+                             (new_address + i->length));
 
     memcpy (b->code, (const void*) old_address, *size);
-    memcpy (b->code + i->len - immediate_size (i) - 4, &d, sizeof (d));
+    memcpy (b->code + i->raw.disp.offset, &d, sizeof (d));
     *code = b->code;
 
-    /* An indirect jmp (FF /4) completes the function.
+    /* An indirect jmp completes the function.
      */
-    if (i->opcode == 0xFF && i->modrm_reg == 4)
+    if (i->mnemonic == ZYDIS_MNEMONIC_JMP)
       b->finished = true;
   }
 #endif
-  else if (i->opcode == 0xE8)
+  else if (branch && i->mnemonic == ZYDIS_MNEMONIC_CALL)
   {
     /* Relative call.
      */
-    uintptr_t dest = old_address + i->len + offset32 (i->imm.imm32);
-
     *code = b->code;
-    *size = encode_call (b, dest, new_address);
+    *size = encode_call (b, branch_destination (i, old_address), new_address);
   }
-  else if ((i->opcode & 0xFD) == 0xE9)
+  else if (branch && i->mnemonic == ZYDIS_MNEMONIC_JMP)
   {
-    /* Relative jmp (EB or E9).
+    /* Relative jmp.
      */
-    uintptr_t dest = old_address + i->len;
-
-    if (i->opcode == 0xEB)
-      dest += offset8 (i->imm.imm8);
-    else
-      dest += offset32 (i->imm.imm32);
+    uintptr_t dest = branch_destination (i, old_address);
 
     if (internal (b, dest))
     {
@@ -260,39 +256,39 @@ relocate (struct builder* b,
       b->finished = old_address >= b->jmp_dest;
     }
   }
-  else if ((i->opcode  & 0xF0) == 0x70 ||
-           (i->opcode  & 0xFC) == 0xE0 ||
-           (i->opcode2 & 0xF0) == 0x80)
+  else if (branch && (jcc (i) || loop (i)))
   {
-    /* Relative jcc, as well as loop, loopz, loopnz, jcxz, and jecxz
-     * (E0-E3), which only have the 8-bit form.
+    /* Relative jcc, as well as loop, loope, loopne, jcxz, jecxz, and
+     * jrcxz, which only have the 8-bit form.
      */
-    bool loop = (i->opcode & 0xFC) == 0xE0;
-    uintptr_t dest = old_address + i->len;
-
-    if ((i->opcode & 0xF0) == 0x70 || loop)
-      dest += offset8 (i->imm.imm8);
-    else
-      dest += offset32 (i->imm.imm32);
+    uintptr_t dest = branch_destination (i, old_address);
 
     if (internal (b, dest))
     {
       if (b->jmp_dest < dest)
         b->jmp_dest = dest;
     }
-    else if (loop)
+    else if (loop (i))
       return false;
     else
     {
-      uint8_t c = (i->opcode != 0x0F ? i->opcode : i->opcode2) & 0x0F;
-
+      /* The low nibble of the last opcode byte (7x or 0F 8x) is the
+       * condition code.
+       */
       *code = b->code;
-      *size = encode_jcc (b, c, dest, new_address);
+      *size = encode_jcc (b, i->opcode & 0x0F, dest, new_address);
     }
   }
-  else if ((i->opcode & 0xFE) == 0xC2)
+  else if (branch)
   {
-    /* ret (C2 or C3) completes the function unless it is within a branch.
+    /* Another instruction with a relative operand (xbegin, for example)
+     * needs a rewrite of its own, so we refuse it.
+     */
+    return false;
+  }
+  else if (i->mnemonic == ZYDIS_MNEMONIC_RET)
+  {
+    /* ret completes the function unless it is within a branch.
      */
     b->finished = old_address >= b->jmp_dest;
   }
@@ -325,16 +321,32 @@ mh_create_trampoline (struct mh_trampoline* t)
   t->patch_above = false;
   t->ip_count = 0;
 
+  /* The decoder only refuses an invalid combination of the machine mode and
+   * the stack width.
+   */
+  ZydisDecoder d;
+  ZyanStatus s = ZydisDecoderInit (&d, MACHINE_MODE, STACK_WIDTH);
+  assert (ZYAN_SUCCESS (s));
+  (void) s;
+
   do
   {
     uintptr_t old_address = (uintptr_t) t->target + b.old_pos;
     uintptr_t new_address = (uintptr_t) t->trampoline + b.new_pos;
 
+    /* Note that the decoder may read up to the maximum instruction length
+     * past the address.
+     */
     instruction i;
-    unsigned int size = decode ((const void*) old_address, &i);
-
-    if (i.flags & INSTRUCTION_ERROR)
+    if (ZYAN_FAILED (ZydisDecoderDecodeInstruction (
+                       &d,
+                       NULL,
+                       (const void*) old_address,
+                       ZYDIS_MAX_INSTRUCTION_LENGTH,
+                       &i)))
       return false;
+
+    unsigned int size = i.length;
 
     const void* code;
     if (!relocate (&b, &i, old_address, new_address, &code, &size))
@@ -343,7 +355,7 @@ mh_create_trampoline (struct mh_trampoline* t)
     /* A rewritten instruction cannot be longer within a branch, since the
      * branch offsets would change.
      */
-    if (old_address < b.jmp_dest && size != i.len)
+    if (old_address < b.jmp_dest && size != i.length)
       return false;
 
     if (b.new_pos + size > TRAMPOLINE_MAX_SIZE)
@@ -361,7 +373,7 @@ mh_create_trampoline (struct mh_trampoline* t)
 
     memcpy ((uint8_t*) t->trampoline + b.new_pos, code, size);
     b.new_pos = (uint8_t) (b.new_pos + size);
-    b.old_pos = (uint8_t) (b.old_pos + i.len);
+    b.old_pos = (uint8_t) (b.old_pos + i.length);
   }
   while (!b.finished);
 

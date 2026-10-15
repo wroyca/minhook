@@ -11,4 +11,5 @@ url: https://github.com/TsudaKageyu/minhook
 email: wroy@proton.me
 depends: * build2 >= 0.18.0
 depends: * bpkg >= 0.18.0
+depends: libzydis ^4.1.0
 builds: default : &windows ; Uses the Win32 API.

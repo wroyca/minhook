@@ -8,7 +8,8 @@ calls the original target function.
 The library is derived from [MinHook](https://github.com/TsudaKageyu/minhook)
 1.3.4 by Tsuda Kageyu. Its interface follows MinHook's with lowercase names
 (`mh_create_hook()` for `MH_CreateHook()`, `enum mh_status` for
-`MH_STATUS`, and so on).
+`MH_STATUS`, and so on). It decodes the instructions that it relocates with
+[Zydis](https://zydis.re/) in place of MinHook's Hacker Disassembler Engine.
 
 
 ## Usage
