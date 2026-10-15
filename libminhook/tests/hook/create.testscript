@@ -1,0 +1,147 @@
+# The hook creation.
+#
+
+: target
+:
+{{
+  : function
+  :
+  : Test that a created hook is disabled and provides the original function.
+  :
+  $* <<EOI >>EOO
+    initialize
+    create a
+    call a 5
+    original a 5
+    uninitialize
+    EOI
+    MH_OK
+    MH_OK
+    16
+    16
+    MH_OK
+    EOO
+
+  : data
+  :
+  : Test that a target outside the executable memory is refused.
+  :
+  $* <<EOI >>EOO
+    initialize
+    create data a
+    uninitialize
+    EOI
+    MH_OK
+    MH_ERROR_NOT_EXECUTABLE
+    MH_OK
+    EOO
+
+  : unmapped
+  :
+  : Test that an address that the system cannot query is not executable.
+  :
+  $* <<EOI >>EOO
+    initialize
+    create unmapped a
+    uninitialize
+    EOI
+    MH_OK
+    MH_ERROR_NOT_EXECUTABLE
+    MH_OK
+    EOO
+
+  : again
+  :
+  : Test that a target can only be hooked once, whatever the detour.
+  :
+  $* <<EOI >>EOO
+    initialize
+    create a
+    create a
+    create a b
+    uninitialize
+    EOI
+    MH_OK
+    MH_OK
+    MH_ERROR_ALREADY_CREATED
+    MH_ERROR_ALREADY_CREATED
+    MH_OK
+    EOO
+
+  : two
+  :
+  : Test that hooks of different targets are independent.
+  :
+  $* <<EOI >>EOO
+    initialize
+    create a
+    create b
+    enable b
+    call a 5
+    call b 5
+    original a 5
+    original b 5
+    uninitialize
+    EOI
+    MH_OK
+    MH_OK
+    MH_OK
+    MH_OK
+    16
+    2073
+    16
+    73
+    MH_OK
+    EOO
+}}
+
+: detour
+:
+{{
+  : data
+  :
+  : Test that a detour outside the executable memory is refused.
+  :
+  $* <<EOI >>EOO
+    initialize
+    create a data
+    uninitialize
+    EOI
+    MH_OK
+    MH_ERROR_NOT_EXECUTABLE
+    MH_OK
+    EOO
+
+  : unmapped
+  :
+  $* <<EOI >>EOO
+    initialize
+    create a unmapped
+    uninitialize
+    EOI
+    MH_OK
+    MH_ERROR_NOT_EXECUTABLE
+    MH_OK
+    EOO
+
+  : other
+  :
+  : Test hooking a function with another function's detour, which calls the
+  : other function's original.
+  :
+  $* <<EOI >>EOO
+    initialize
+    create b
+    create a b
+    enable a
+    call a 5
+    uninitialize
+    EOI
+    MH_OK
+    MH_OK
+    MH_OK
+    MH_OK
+    2073
+    MH_OK
+    EOO
+}}

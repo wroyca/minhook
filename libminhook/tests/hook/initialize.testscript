@@ -1,0 +1,129 @@
+# The library initialization and uninitialization.
+#
+
+: twice
+:
+: Test that initializing and uninitializing are only valid once each.
+:
+$* <<EOI >>EOO
+  initialize
+  initialize
+  uninitialize
+  uninitialize
+  EOI
+  MH_OK
+  MH_ERROR_ALREADY_INITIALIZED
+  MH_OK
+  MH_ERROR_NOT_INITIALIZED
+  EOO
+
+: not-initialized
+:
+: Test that every operation requires initialization.
+:
+$* <<EOI >>EOO
+  create a
+  remove a
+  enable a
+  disable a
+  enable all
+  disable all
+  queue-enable a
+  queue-disable a
+  queue-enable all
+  apply
+  uninitialize
+  EOI
+  MH_ERROR_NOT_INITIALIZED
+  MH_ERROR_NOT_INITIALIZED
+  MH_ERROR_NOT_INITIALIZED
+  MH_ERROR_NOT_INITIALIZED
+  MH_ERROR_NOT_INITIALIZED
+  MH_ERROR_NOT_INITIALIZED
+  MH_ERROR_NOT_INITIALIZED
+  MH_ERROR_NOT_INITIALIZED
+  MH_ERROR_NOT_INITIALIZED
+  MH_ERROR_NOT_INITIALIZED
+  MH_ERROR_NOT_INITIALIZED
+  EOO
+
+: reinitialize
+:
+: Test that the library is usable again after uninitializing and that
+: uninitializing forgets the hooks.
+:
+$* <<EOI >>EOO
+  initialize
+  create a
+  uninitialize
+  initialize
+  enable a
+  create a
+  enable a
+  call a 5
+  uninitialize
+  EOI
+  MH_OK
+  MH_OK
+  MH_OK
+  MH_OK
+  MH_ERROR_NOT_CREATED
+  MH_OK
+  MH_OK
+  1016
+  MH_OK
+  EOO
+
+: uninitialize
+:
+{{
+  : enabled
+  :
+  : Test that uninitializing disables the enabled hooks.
+  :
+  $* <<EOI >>EOO
+    initialize
+    create a
+    create b
+    enable a
+    enable b
+    uninitialize
+    call a 5
+    call b 5
+    EOI
+    MH_OK
+    MH_OK
+    MH_OK
+    MH_OK
+    MH_OK
+    MH_OK
+    16
+    73
+    EOO
+
+  : disabled
+  :
+  $* <<EOI >>EOO
+    initialize
+    create a
+    uninitialize
+    call a 5
+    EOI
+    MH_OK
+    MH_OK
+    MH_OK
+    16
+    EOO
+
+  : empty
+  :
+  : Test uninitializing without hooks.
+  :
+  $* <<EOI >>EOO
+    initialize
+    uninitialize
+    EOI
+    MH_OK
+    MH_OK
+    EOO
+}}

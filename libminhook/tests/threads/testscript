@@ -1,0 +1,122 @@
+# Hooking with other threads in the process.
+#
+
+: spin
+:
+: Test toggling the hook of a function that another thread runs.
+:
+$* spin >>EOO
+  initialize MH_OK
+  create MH_OK
+  toggle 1
+  uninitialize MH_OK
+  EOO
+
+: inside
+:
+: Test that the state changes move a thread that runs within the code that
+: the hook overwrites to the equivalent instruction in the trampoline and
+: back, except for disabling a single hook.
+:
+$* inside >>EOO
+  initialize MH_OK
+  create MH_OK
+  enable MH_OK
+  enable trampoline
+  disable MH_OK
+  disable trampoline
+  enable MH_OK
+  enable trampoline
+  disable-all MH_OK
+  disable-all target
+  enable-all MH_OK
+  enable-all trampoline
+  queue-disable MH_OK
+  queue-disable trampoline
+  apply MH_OK
+  apply target
+  queue-enable MH_OK
+  queue-enable target
+  apply MH_OK
+  apply trampoline
+  remove MH_OK
+  remove target
+  uninitialize MH_OK
+  EOO
+
+: relay
+:
+: Test that removing the hook moves a thread at the x64 relay to the target.
+:
+if ($c.target.cpu == 'x86_64')
+{
+  $* relay >>EOO
+    initialize MH_OK
+    create MH_OK
+    enable MH_OK
+    remove MH_OK
+    remove target
+    uninitialize MH_OK
+    EOO
+}
+
+: hot-patch
+:
+: Test that removing the hook moves a thread at the long jump in the hot
+: patch area to the target.
+:
+$* hot-patch >>EOO
+  initialize MH_OK
+  create MH_OK
+  enable MH_OK
+  remove MH_OK
+  remove target
+  uninitialize MH_OK
+  EOO
+
+: many
+:
+: Test toggling a hook with more threads than the initial capacity of the
+: engine's thread list.
+:
+$* many >>EOO
+  initialize MH_OK
+  create MH_OK
+  enable MH_OK
+  call 1010
+  disable MH_OK
+  call 10
+  enable MH_OK
+  disable-all MH_OK
+  call 10
+  uninitialize MH_OK
+  EOO
+
+: concurrent
+:
+: Test that the API calls from two threads at once are serialized.
+:
+$* concurrent >>EOO
+  initialize MH_OK
+  create-twice MH_OK
+  create-thrice MH_OK
+  toggle 1
+  call 10 15
+  uninitialize MH_OK
+  EOO
+
+: invalid
+:
+{{
+  : missing
+  :
+  : Test that the scenario is required.
+  :
+  $* 2>'error: expected scenario' != 0
+
+  : unknown
+  :
+  : Test that an unknown scenario is rejected.
+  :
+  $* bogus 2>"error: invalid scenario 'bogus'" != 0
+}}

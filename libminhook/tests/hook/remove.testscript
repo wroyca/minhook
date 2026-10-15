@@ -1,0 +1,137 @@
+# The hook removal.
+#
+
+: disabled
+:
+$* <<EOI >>EOO
+  initialize
+  create a
+  remove a
+  enable a
+  uninitialize
+  EOI
+  MH_OK
+  MH_OK
+  MH_OK
+  MH_ERROR_NOT_CREATED
+  MH_OK
+  EOO
+
+: enabled
+:
+: Test that removing an enabled hook restores the target function.
+:
+$* <<EOI >>EOO
+  initialize
+  create a
+  enable a
+  remove a
+  call a 5
+  uninitialize
+  EOI
+  MH_OK
+  MH_OK
+  MH_OK
+  MH_OK
+  16
+  MH_OK
+  EOO
+
+: uncreated
+:
+$* <<EOI >>EOO
+  initialize
+  remove a
+  uninitialize
+  EOI
+  MH_OK
+  MH_ERROR_NOT_CREATED
+  MH_OK
+  EOO
+
+: twice
+:
+$* <<EOI >>EOO
+  initialize
+  create a
+  remove a
+  remove a
+  uninitialize
+  EOI
+  MH_OK
+  MH_OK
+  MH_OK
+  MH_ERROR_NOT_CREATED
+  MH_OK
+  EOO
+
+: all
+:
+: Test that MH_ALL_HOOKS doesn't denote all the hooks for removal.
+:
+$* <<EOI >>EOO
+  initialize
+  create a
+  remove all
+  uninitialize
+  EOI
+  MH_OK
+  MH_OK
+  MH_ERROR_NOT_CREATED
+  MH_OK
+  EOO
+
+: recreate
+:
+: Test that a removed hook can be created again and that removing the first
+: of two hooks leaves the second one alone.
+:
+$* <<EOI >>EOO
+  initialize
+  create a
+  create b
+  enable b
+  remove a
+  call b 5
+  create a
+  enable a
+  call a 5
+  call b 5
+  uninitialize
+  EOI
+  MH_OK
+  MH_OK
+  MH_OK
+  MH_OK
+  MH_OK
+  2073
+  MH_OK
+  MH_OK
+  1016
+  2073
+  MH_OK
+  EOO
+
+: last
+:
+: Test removing the last of two hooks.
+:
+$* <<EOI >>EOO
+  initialize
+  create a
+  create b
+  enable a
+  remove b
+  call a 5
+  call b 5
+  uninitialize
+  EOI
+  MH_OK
+  MH_OK
+  MH_OK
+  MH_OK
+  MH_OK
+  1016
+  73
+  MH_OK
+  EOO

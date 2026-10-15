@@ -1,0 +1,95 @@
+# Hooking exported functions by name.
+#
+
+: hook
+:
+{{
+  : process
+  :
+  $* kernel32.dll GetCurrentProcessId >>EOO
+    create MH_OK
+    target 1
+    hooked 42
+    original 1
+    EOO
+
+  : version
+  :
+  $* kernel32.dll GetVersion >>EOO
+    create MH_OK
+    target 1
+    hooked 42
+    original 1
+    EOO
+
+  : case
+  :
+  : Test that the module name is case-insensitive, as in the system.
+  :
+  $* KERNEL32.DLL GetCurrentProcessId >>EOO
+    create MH_OK
+    target 1
+    hooked 42
+    original 1
+    EOO
+
+  : no-target
+  :
+  : Test the function that doesn't return the target address.
+  :
+  $* --no-target kernel32.dll GetCurrentProcessId >>EOO
+    create MH_OK
+    hooked 42
+    original 1
+    EOO
+}}
+
+: module-not-found
+:
+{{
+  : target
+  :
+  $* nonexistent.dll GetCurrentProcessId >>EOO
+    create MH_ERROR_MODULE_NOT_FOUND
+    EOO
+
+  : no-target
+  :
+  $* --no-target nonexistent.dll GetCurrentProcessId >>EOO
+    create MH_ERROR_MODULE_NOT_FOUND
+    EOO
+}}
+
+: function-not-found
+:
+{{
+  : target
+  :
+  $* kernel32.dll NonexistentFunction >>EOO
+    create MH_ERROR_FUNCTION_NOT_FOUND
+    EOO
+
+  : no-target
+  :
+  $* --no-target kernel32.dll NonexistentFunction >>EOO
+    create MH_ERROR_FUNCTION_NOT_FOUND
+    EOO
+}}
+
+: invalid
+:
+{{
+  : missing
+  :
+  : Test that the module and the function are required.
+  :
+  $* kernel32.dll 2>'error: expected module and function' != 0
+
+  : extra
+  :
+  : Test that an extra argument is rejected.
+  :
+  $* kernel32.dll GetCurrentProcessId x 2>>EOE != 0
+    error: expected module and function
+    EOE
+}}

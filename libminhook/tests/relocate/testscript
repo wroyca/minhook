@@ -1,0 +1,353 @@
+# Building trampolines for machine code. See the driver for the layout of
+# the page that holds the code. Relative operands are counted from the end
+# of their instruction and the target function starts at 0x10. For example,
+# the helper function at 0x40 is 0x2b away from a 5-byte call at 0x10.
+#
+
+: return
+:
+{{
+  : padded
+  :
+  : Test a function shorter than the hook's jump followed by padding.
+  :
+  $* 31 c0 c3 >>EOO
+    create MH_OK
+    plain 0
+    hooked 1000
+    restored 0
+    removed 0
+    EOO
+
+  : immediate
+  :
+  : Test ret with an immediate operand.
+  :
+  $* 31 c0 c2 00 00 >>EOO
+    create MH_OK
+    plain 0
+    hooked 1000
+    restored 0
+    removed 0
+    EOO
+
+  : long
+  :
+  : Test that the trampoline jumps to the rest of the target function.
+  :
+  $* b8 07 00 00 00 c3 >>EOO
+    create MH_OK
+    plain 7
+    hooked 1007
+    restored 7
+    removed 7
+    EOO
+
+  : mixed-padding
+  :
+  : Test a function shorter than the hook's jump followed by bytes that are
+  : not all the same padding byte, which the hook overwrites through the hot
+  : patch area.
+  :
+  $* 31 c0 c3 cc 90 >>EOO
+    create MH_OK
+    plain 0
+    hooked 1000
+    restored 0
+    removed 0
+    EOO
+
+  : short
+  :
+  : Test that a function shorter than a short jump and followed by code is
+  : refused.
+  :
+  $* c3 31 c0 c3 >'create MH_ERROR_UNSUPPORTED_FUNCTION'
+}}
+
+: call
+:
+: Test a relative call.
+:
+$* e8 2b 00 00 00 c3 >>EOO
+  create MH_OK
+  plain 42
+  hooked 1042
+  restored 42
+  removed 42
+  EOO
+
+: jmp
+:
+{{
+  : near
+  :
+  $* e9 2b 00 00 00 >>EOO
+    create MH_OK
+    plain 42
+    hooked 1042
+    restored 42
+    removed 42
+    EOO
+
+  : short
+  :
+  : Test a short jump followed by padding.
+  :
+  $* eb 2e >>EOO
+    create MH_OK
+    plain 42
+    hooked 1042
+    restored 42
+    removed 42
+    EOO
+
+  : internal
+  :
+  : Test a jump within the code that the hook overwrites.
+  :
+  $* 31 c0 eb 00 b8 07 00 00 00 c3 >>EOO
+    create MH_OK
+    plain 7
+    hooked 1007
+    restored 7
+    removed 7
+    EOO
+}}
+
+: hot-patch
+:
+{{
+  : area
+  :
+  : Test a short jump followed by code that is not padding, which the hook
+  : overwrites with a short jump to a long one in the padding above it.
+  :
+  $* eb 2e 31 c0 c3 >>EOO
+    create MH_OK
+    plain 42
+    hooked 1042
+    restored 42
+    removed 42
+    EOO
+
+  : no-area
+  :
+  : Test that such a function is refused if the code above is not padding.
+  :
+  $* --no-hot-patch-area eb 2e 31 c0 c3 >'create MH_ERROR_UNSUPPORTED_FUNCTION'
+
+  : not-executable
+  :
+  : Test that such a function is refused if the padding above is not
+  : executable.
+  :
+  $* --page-start c3 cc 31 c0 c3 >'create MH_ERROR_UNSUPPORTED_FUNCTION'
+}}
+
+: jcc
+:
+{{
+  : short-taken
+  :
+  $* 31 c0 74 2c b8 07 00 00 00 c3 >>EOO
+    create MH_OK
+    plain 42
+    hooked 1042
+    restored 42
+    removed 42
+    EOO
+
+  : short-not-taken
+  :
+  $* 83 c8 01 74 2b b8 07 00 00 00 c3 >>EOO
+    create MH_OK
+    plain 7
+    hooked 1007
+    restored 7
+    removed 7
+    EOO
+
+  : near-taken
+  :
+  $* 31 c0 0f 84 28 00 00 00 c3 >>EOO
+    create MH_OK
+    plain 42
+    hooked 1042
+    restored 42
+    removed 42
+    EOO
+
+  : near-not-taken
+  :
+  $* 83 c8 01 0f 84 27 00 00 00 b8 07 00 00 00 c3 >>EOO
+    create MH_OK
+    plain 7
+    hooked 1007
+    restored 7
+    removed 7
+    EOO
+
+  : internal
+  :
+  : Test a conditional jump within the code that the hook overwrites over a
+  : ret, which doesn't complete the function.
+  :
+  $* f8 73 01 c3 b8 07 00 00 00 c3 >>EOO
+    create MH_OK
+    plain 7
+    hooked 1007
+    restored 7
+    removed 7
+    EOO
+
+  : branch-growth
+  :
+  : Test that an instruction that grows when relocated is refused within a
+  : branch since the branch would no longer reach its destination.
+  :
+  $* eb 02 74 2c 31 c0 c3 >'create MH_ERROR_UNSUPPORTED_FUNCTION'
+}}
+
+: loop
+:
+{{
+  : external
+  :
+  : Test that loop with a destination outside the code that the hook
+  : overwrites is refused since it has no long form.
+  :
+  $* 31 c9 e2 2c >'create MH_ERROR_UNSUPPORTED_FUNCTION'
+
+  : jecxz-external
+  :
+  $* 31 c9 e3 2c >'create MH_ERROR_UNSUPPORTED_FUNCTION'
+
+  : jecxz-internal
+  :
+  : Test jecxz within the code that the hook overwrites. Both of its
+  : outcomes continue at the same instruction.
+  :
+  $* e3 00 31 c0 c3 >>EOO
+    create MH_OK
+    plain 0
+    hooked 1000
+    restored 0
+    removed 0
+    EOO
+}}
+
+: invalid
+:
+{{
+  : opcode
+  :
+  $* 0f 04 >'create MH_ERROR_UNSUPPORTED_FUNCTION'
+
+  : lock
+  :
+  : Test lock with a register operand.
+  :
+  $* f0 01 c0 c3 >'create MH_ERROR_UNSUPPORTED_FUNCTION'
+}}
+
+: x86-64
+:
+if ($c.target.cpu == 'x86_64')
+{{
+  : rip-relative
+  :
+  {{
+    : load
+    :
+    : Test mov eax, [rip+...] reading the dword at 0x208.
+    :
+    $* 8b 05 f2 01 00 00 c3 >>EOO
+      create MH_OK
+      plain 7
+      hooked 1007
+      restored 7
+      removed 7
+      EOO
+
+    : immediate
+    :
+    : Test mov dword [rip+...], 7, whose displacement precedes the
+    : immediate, by reading back the scratch dword.
+    :
+    $* c7 05 f2 01 00 00 07 00 00 00 8b 05 ec 01 00 00 c3 >>EOO
+      create MH_OK
+      plain 7
+      hooked 1007
+      restored 7
+      removed 7
+      EOO
+
+    : lea
+    :
+    $* 48 8d 05 f1 01 00 00 8b 00 c3 >>EOO
+      create MH_OK
+      plain 7
+      hooked 1007
+      restored 7
+      removed 7
+      EOO
+
+    : jmp
+    :
+    : Test jmp [rip+...] through the pointer at 0x200, which completes the
+    : function.
+    :
+    $* ff 25 ea 01 00 00 >>EOO
+      create MH_OK
+      plain 42
+      hooked 1042
+      restored 42
+      removed 42
+      EOO
+
+    : call
+    :
+    $* ff 15 ea 01 00 00 c3 >>EOO
+      create MH_OK
+      plain 42
+      hooked 1042
+      restored 42
+      removed 42
+      EOO
+
+    : address-size
+    :
+    : Test that a RIP-relative instruction with the address size prefix
+    : (EIP-relative) is refused.
+    :
+    $* 67 8b 05 00 00 00 00 c3 >'create MH_ERROR_UNSUPPORTED_FUNCTION'
+  }}
+
+  : overflow
+  :
+  : Test that code whose trampoline doesn't fit into its slot is refused.
+  : Each conditional jump grows to 16 bytes.
+  :
+  $* 74 2e 74 2c 74 2a >'create MH_ERROR_UNSUPPORTED_FUNCTION'
+}}
+
+: arguments
+:
+{{
+  : missing
+  :
+  : Test that the bytes are required.
+  :
+  $* 2>'error: expected bytes' != 0
+
+  : byte
+  :
+  : Test that a byte is two hex digits.
+  :
+  {{
+    $* 1ff 2>"error: invalid byte '1ff'" != 0 : long
+    $* f   2>"error: invalid byte 'f'"   != 0 : short
+    $* zz  2>"error: invalid byte 'zz'"  != 0 : digit
+  }}
+}}

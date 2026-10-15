@@ -1,0 +1,56 @@
+# Hooking many functions. Note that the engine's hook list starts with room
+# for 32 hooks and that a 4K block of trampoline slots holds 63 of them on
+# x64 and 127 on x86.
+#
+
+: one
+:
+$* 1 >>EOO
+  created 1
+  hooked 1
+  restored 1
+  removed 1
+  EOO
+
+: initial
+:
+: Test as many hooks as the hook list initially holds.
+:
+$* 32 >>EOO
+  created 32
+  hooked 32
+  restored 32
+  removed 32
+  EOO
+
+: grow
+:
+: Test that the hook list grows past its initial capacity.
+:
+$* 33 >>EOO
+  created 33
+  hooked 33
+  restored 33
+  removed 33
+  EOO
+
+: blocks
+:
+: Test hooks that need several blocks of trampoline slots and a hook list
+: that grows and shrinks several times.
+:
+$* 256 >>EOO
+  created 256
+  hooked 256
+  restored 256
+  removed 256
+  EOO
+
+: invalid
+:
+{{
+  $*     2>'error: expected count between 1 and 256' != 0 : missing
+  $* 0   2>'error: expected count between 1 and 256' != 0 : zero
+  $* 257 2>'error: expected count between 1 and 256' != 0 : above
+  $* 1x  2>'error: expected count between 1 and 256' != 0 : junk
+}}

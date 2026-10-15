@@ -1,0 +1,3 @@
+import libs = libminhook%lib{minhook}
+
+exe{driver}: {h c}{**} $libs testscript

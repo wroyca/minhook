@@ -1,20 +1,27 @@
-# minhook - <SUMMARY>
+# minhook - x86/x64 API hooking C library for Windows
 
-`minhook` is a <SUMMARY-OF-FUNCTIONALITY>.
+This repository contains the `libminhook` C library, derived from
+[MinHook](https://github.com/TsudaKageyu/minhook), which hooks functions in
+the current process on x86 and x64 Windows.
 
 This file contains setup instructions and other details that are more
 appropriate for development rather than consumption. If you want to use
-`minhook` in your `build2`-based project, then instead see the accompanying
-package [`README.md`](<PACKAGE>/README.md) file.
+`libminhook` in your `build2`-based project, then instead see the
+accompanying package [`README.md`](libminhook/README.md) file.
 
 The development setup for `minhook` uses the standard `bdep`-based workflow.
-For example:
+The library only builds for Windows, so on Linux we cross-compile with
+MinGW-w64 GCC and run the tests under Wine. For example:
 
 ```
 git clone .../minhook.git
 cd minhook
 
-bdep init -C @gcc cc config.cxx=g++
+bdep init -C @mingw cc                                        \
+  config.c=x86_64-w64-mingw32-gcc                             \
+  config.cxx=x86_64-w64-mingw32-g++                           \
+  config.test.runner="env WINEPATH=/usr/x86_64-w64-mingw32/sys-root/mingw/bin wine"
+
 bdep update
 bdep test
 ```

@@ -3,12 +3,12 @@ name: libminhook
 version: 0.1.0-a.0.z
 language: c
 project: minhook
-summary: minhook C library
-license: other: proprietary ; Not free/open source.
+summary: x86/x64 API hooking C library for Windows
+license: BSD-2-Clause
+topics: API hooking, function hooking, detours, x86, x86-64
 description-file: README.md
-url: https://example.org/minhook
+url: https://github.com/TsudaKageyu/minhook
 email: wroy@proton.me
-#build-error-email: wroy@proton.me
 depends: * build2 >= 0.18.0
 depends: * bpkg >= 0.18.0
-#depends: libhello ^1.0.0
+builds: default : &windows ; Uses the Win32 API.

@@ -1,0 +1,198 @@
+# Queuing hook state changes and applying them at once.
+#
+
+: apply
+:
+: Test that queued changes only take effect when applied.
+:
+$* <<EOI >>EOO
+  initialize
+  create a
+  create b
+  queue-enable all
+  queue-disable a
+  call a 7
+  call b 7
+  apply
+  call a 7
+  call b 7
+  uninitialize
+  EOI
+  MH_OK
+  MH_OK
+  MH_OK
+  MH_OK
+  MH_OK
+  22
+  75
+  MH_OK
+  22
+  2075
+  MH_OK
+  EOO
+
+: disable
+:
+$* <<EOI >>EOO
+  initialize
+  create a
+  create b
+  enable all
+  queue-disable b
+  apply
+  call a 7
+  call b 7
+  uninitialize
+  EOI
+  MH_OK
+  MH_OK
+  MH_OK
+  MH_OK
+  MH_OK
+  MH_OK
+  1022
+  75
+  MH_OK
+  EOO
+
+: disable-all
+:
+$* <<EOI >>EOO
+  initialize
+  create a
+  create b
+  enable all
+  queue-disable all
+  apply
+  call a 7
+  call b 7
+  uninitialize
+  EOI
+  MH_OK
+  MH_OK
+  MH_OK
+  MH_OK
+  MH_OK
+  MH_OK
+  22
+  75
+  MH_OK
+  EOO
+
+: empty
+:
+: Test that applying succeeds when nothing is queued.
+:
+$* <<EOI >>EOO
+  initialize
+  apply
+  create a
+  apply
+  call a 5
+  uninitialize
+  EOI
+  MH_OK
+  MH_OK
+  MH_OK
+  MH_OK
+  16
+  MH_OK
+  EOO
+
+: uncreated
+:
+$* <<EOI >>EOO
+  initialize
+  queue-enable a
+  queue-disable a
+  uninitialize
+  EOI
+  MH_OK
+  MH_ERROR_NOT_CREATED
+  MH_ERROR_NOT_CREATED
+  MH_OK
+  EOO
+
+: none
+:
+: Test that queuing for all the hooks succeeds without hooks.
+:
+$* <<EOI >>EOO
+  initialize
+  queue-enable all
+  apply
+  uninitialize
+  EOI
+  MH_OK
+  MH_OK
+  MH_OK
+  MH_OK
+  EOO
+
+: overridden
+:
+: Test that a direct change after queuing discards the queued state.
+:
+$* <<EOI >>EOO
+  initialize
+  create a
+  queue-enable a
+  enable a
+  disable a
+  apply
+  call a 5
+  uninitialize
+  EOI
+  MH_OK
+  MH_OK
+  MH_OK
+  MH_OK
+  MH_OK
+  MH_OK
+  16
+  MH_OK
+  EOO
+
+: removed
+:
+: Test that removing a hook discards its queued change.
+:
+$* <<EOI >>EOO
+  initialize
+  create a
+  create b
+  queue-enable all
+  remove a
+  apply
+  call a 7
+  call b 7
+  uninitialize
+  EOI
+  MH_OK
+  MH_OK
+  MH_OK
+  MH_OK
+  MH_OK
+  MH_OK
+  22
+  2075
+  MH_OK
+  EOO
+
+: uninitialize
+:
+: Test that uninitializing discards the queued changes.
+:
+$* <<EOI >>EOO
+  initialize
+  create a
+  queue-enable a
+  uninitialize
+  call a 5
+  EOI
+  MH_OK
+  MH_OK
+  MH_OK
+  MH_OK
+  16
+  EOO

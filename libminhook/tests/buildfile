@@ -1,1 +1,4 @@
-./: {*/ -build/}
+# The common/ subdirectory contains headers that are shared by several tests
+# and is not a test itself.
+#
+./: {*/ -build/ -common/}

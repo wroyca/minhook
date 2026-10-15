@@ -1,0 +1,196 @@
+# Enabling and disabling hooks one at a time and all at once.
+#
+
+: toggle
+:
+: Test that the hook redirects the target function only while enabled.
+:
+$* <<EOI >>EOO
+  initialize
+  create a
+  call a 5
+  enable a
+  call a 5
+  original a 5
+  disable a
+  call a 5
+  enable a
+  call a 6
+  uninitialize
+  EOI
+  MH_OK
+  MH_OK
+  16
+  MH_OK
+  1016
+  16
+  MH_OK
+  16
+  MH_OK
+  1019
+  MH_OK
+  EOO
+
+: state
+:
+: Test that enabling an enabled hook and disabling a disabled one fail.
+:
+$* <<EOI >>EOO
+  initialize
+  create a
+  disable a
+  enable a
+  enable a
+  disable a
+  disable a
+  uninitialize
+  EOI
+  MH_OK
+  MH_OK
+  MH_ERROR_DISABLED
+  MH_OK
+  MH_ERROR_ENABLED
+  MH_OK
+  MH_ERROR_DISABLED
+  MH_OK
+  EOO
+
+: uncreated
+:
+$* <<EOI >>EOO
+  initialize
+  enable a
+  disable a
+  uninitialize
+  EOI
+  MH_OK
+  MH_ERROR_NOT_CREATED
+  MH_ERROR_NOT_CREATED
+  MH_OK
+  EOO
+
+: all
+:
+{{
+  : toggle
+  :
+  $* <<EOI >>EOO
+    initialize
+    create a
+    create b
+    enable all
+    call a 7
+    call b 7
+    disable all
+    call a 7
+    call b 7
+    uninitialize
+    EOI
+    MH_OK
+    MH_OK
+    MH_OK
+    MH_OK
+    1022
+    2075
+    MH_OK
+    22
+    75
+    MH_OK
+    EOO
+
+  : none
+  :
+  : Test that enabling and disabling all the hooks succeeds without hooks.
+  :
+  $* <<EOI >>EOO
+    initialize
+    enable all
+    disable all
+    uninitialize
+    EOI
+    MH_OK
+    MH_OK
+    MH_OK
+    MH_OK
+    EOO
+
+  : unchanged
+  :
+  : Test that enabling all the hooks when all are enabled and disabling them
+  : when all are disabled succeed.
+  :
+  $* <<EOI >>EOO
+    initialize
+    create a
+    disable all
+    enable all
+    enable all
+    call a 5
+    uninitialize
+    EOI
+    MH_OK
+    MH_OK
+    MH_OK
+    MH_OK
+    MH_OK
+    1016
+    MH_OK
+    EOO
+
+  : mixed
+  :
+  : Test that enabling all the hooks enables the disabled ones and leaves the
+  : enabled ones alone, and conversely for disabling.
+  :
+  $* <<EOI >>EOO
+    initialize
+    create a
+    create b
+    enable b
+    enable all
+    call a 5
+    call b 5
+    disable a
+    disable all
+    call a 5
+    call b 5
+    uninitialize
+    EOI
+    MH_OK
+    MH_OK
+    MH_OK
+    MH_OK
+    MH_OK
+    1016
+    2073
+    MH_OK
+    MH_OK
+    16
+    73
+    MH_OK
+    EOO
+
+  : single
+  :
+  : Test that a hook enabled with the others can be disabled on its own.
+  :
+  $* <<EOI >>EOO
+    initialize
+    create a
+    create b
+    enable all
+    disable b
+    call a 5
+    call b 5
+    uninitialize
+    EOI
+    MH_OK
+    MH_OK
+    MH_OK
+    MH_OK
+    MH_OK
+    1016
+    73
+    MH_OK
+    EOO
+}}

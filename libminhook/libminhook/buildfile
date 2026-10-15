@@ -1,8 +1,4 @@
-intf_libs = # Interface dependencies.
-impl_libs = # Implementation dependencies.
-#import xxxx_libs += libhello%lib{hello}
-
-lib{minhook}: {h c}{** -version} h{version} $impl_libs $intf_libs
+lib{minhook}: {h c}{** -version} h{version}
 
 h{version}: in{version} $src_root/manifest
 
@@ -18,7 +14,6 @@ objs{*}: c.poptions += -DLIBMINHOOK_SHARED_BUILD
 lib{minhook}:
 {
   c.export.poptions = "-I$out_root" "-I$src_root"
-  c.export.libs = $intf_libs
 }
 
 liba{minhook}: c.export.poptions += -DLIBMINHOOK_STATIC
@@ -41,3 +36,8 @@ h{*}:
   install         = include/libminhook/
   install.subdirs = true
 }
+
+# Only the engine's sources include its internal headers.
+#
+h{buffer}@./ h{trampoline}@./                 \
+h{hde32}@./ h{hde64}@./ h{table32}@./ h{table64}@./: install = false

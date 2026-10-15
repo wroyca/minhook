@@ -1,0 +1,76 @@
+# The driver's own input errors.
+#
+
+: command
+:
+: Test that an unknown command is rejected.
+:
+$* <'bogus a' 2>"error: invalid command 'bogus a'" != 0
+
+: empty
+:
+: Test that an empty line is rejected.
+:
+$* <'' 2>"error: invalid command ''" != 0
+
+: target
+:
+: Test that an unknown target is rejected.
+:
+$* <'enable c' 2>"error: invalid command 'enable c'" != 0
+
+: detour
+:
+: Test that an unknown detour is rejected.
+:
+$* <'create a c' 2>"error: invalid command 'create a c'" != 0
+
+: arguments
+:
+{{
+  : extra
+  :
+  : Test that an extra argument is rejected.
+  :
+  $* <'initialize a' 2>"error: invalid command 'initialize a'" != 0
+
+  : missing
+  :
+  : Test that a missing argument is rejected.
+  :
+  $* <'enable' 2>"error: invalid command 'enable'" != 0
+
+  : excess
+  :
+  : Test that a line with more words than any command is rejected.
+  :
+  $* <'create a b c d' 2>"error: invalid command 'create a b c d'" != 0
+}}
+
+: call
+:
+{{
+  : value
+  :
+  : Test that a call requires an integer.
+  :
+  $* <'call a x' 2>"error: invalid command 'call a x'" != 0
+
+  : count
+  :
+  : Test that a call requires exactly a function and an integer.
+  :
+  $* <'call a' 2>"error: invalid command 'call a'" != 0
+
+  : function
+  :
+  : Test that only the target functions can be called.
+  :
+  $* <'call data 1' 2>"error: invalid command 'call data 1'" != 0
+
+  : original
+  :
+  : Test that the original function requires a created hook.
+  :
+  $* <'original b 1' 2>"error: invalid command 'original b 1'" != 0
+}}

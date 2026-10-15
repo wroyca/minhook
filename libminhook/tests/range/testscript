@@ -1,0 +1,58 @@
+# Allocating trampolines within reach of their targets on x64.
+#
+
+: far
+:
+: Test that a target out of reach of the existing trampoline blocks gets
+: a block of its own.
+:
+$* far >>EOO
+  initialize MH_OK
+  create-near MH_OK
+  create-far MH_OK
+  enable-all MH_OK
+  call-near 1042
+  call-far 1042
+  uninitialize MH_OK
+  EOO
+
+: below
+:
+: Test that the trampoline is allocated above the target if there is no
+: room below it.
+:
+$* below >>EOO
+  initialize MH_OK
+  create MH_OK
+  above 1
+  enable MH_OK
+  call 1042
+  uninitialize MH_OK
+  EOO
+
+: reserved
+:
+: Test that a target without room for a trampoline within reach is
+: refused.
+:
+$* reserved >>EOO
+  initialize MH_OK
+  create MH_ERROR_MEMORY_ALLOC
+  uninitialize MH_OK
+  EOO
+
+: invalid
+:
+{{
+  : missing
+  :
+  : Test that the scenario is required.
+  :
+  $* 2>'error: expected scenario' != 0
+
+  : unknown
+  :
+  : Test that an unknown scenario is rejected.
+  :
+  $* bogus 2>"error: invalid scenario 'bogus'" != 0
+}}

@@ -1,0 +1,9 @@
+import libs = libminhook%lib{minhook}
+
+# The engine only places trampolines within reach of their targets on x64.
+#
+./: exe{driver}: include = ($c.target.cpu == 'x86_64')
+
+exe{driver}: {h c}{**} ../common/h{code} $libs testscript
+
+c.poptions =+ "-I$src_root"

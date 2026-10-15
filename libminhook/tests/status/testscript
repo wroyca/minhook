@@ -1,0 +1,52 @@
+# The status names.
+#
+
+: name
+:
+{{
+  $* -1 >'MH_UNKNOWN'                    : unknown
+  $* 0  >'MH_OK'                         : ok
+  $* 1  >'MH_ERROR_ALREADY_INITIALIZED'  : already-initialized
+  $* 2  >'MH_ERROR_NOT_INITIALIZED'      : not-initialized
+  $* 3  >'MH_ERROR_ALREADY_CREATED'      : already-created
+  $* 4  >'MH_ERROR_NOT_CREATED'          : not-created
+  $* 5  >'MH_ERROR_ENABLED'              : enabled
+  $* 6  >'MH_ERROR_DISABLED'             : disabled
+  $* 7  >'MH_ERROR_NOT_EXECUTABLE'       : not-executable
+  $* 8  >'MH_ERROR_UNSUPPORTED_FUNCTION' : unsupported-function
+  $* 9  >'MH_ERROR_MEMORY_ALLOC'         : memory-alloc
+  $* 10 >'MH_ERROR_MEMORY_PROTECT'       : memory-protect
+  $* 11 >'MH_ERROR_MODULE_NOT_FOUND'     : module-not-found
+  $* 12 >'MH_ERROR_FUNCTION_NOT_FOUND'   : function-not-found
+}}
+
+: out-of-range
+:
+: Test that a value outside the enumeration has a placeholder name.
+:
+{{
+  $* 13 >'(unknown)' : above
+  $* -2 >'(unknown)' : below
+}}
+
+: invalid
+:
+{{
+  : missing
+  :
+  : Test that the value is required.
+  :
+  $* 2>'error: expected status value' != 0
+
+  : junk
+  :
+  : Test that a value with trailing junk is rejected.
+  :
+  $* 1x 2>"error: invalid status value '1x'" != 0
+
+  : empty
+  :
+  : Test that an empty value is rejected.
+  :
+  $* '' 2>"error: invalid status value ''" != 0
+}}

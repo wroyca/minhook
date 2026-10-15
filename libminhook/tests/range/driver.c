@@ -1,0 +1,246 @@
+#include <stdio.h>
+#include <stdint.h>
+#include <string.h> /* strcmp(), memcpy() */
+
+#include <libminhook/minhook.h>
+
+#include <common/code.h>
+
+/* Usage: argv[0] <scenario>
+ *
+ * On x64 the engine allocates the trampoline of a hook within 1GB of the
+ * target, so that the relative jumps between the two reach. Run the
+ * scenario with a target function far from the other code of the process
+ * and print the outcome of each step on a line of its own. The scenarios
+ * are:
+ *
+ * far       hook a function near the other code and then the far one
+ * below     hook the far function with the address space below it reserved
+ * reserved  hook the far function with the address space around it reserved
+ *
+ * The target functions are mov eax, 42; ret and their detours add 1000 to
+ * the result of the original function. The below scenario also prints
+ * whether the trampoline is above the target.
+ */
+
+#define COUNT(a) (sizeof (a) / sizeof ((a)[0]))
+
+/* The distance within which the engine allocates trampolines and the
+ * allocation granularity.
+ */
+#define RANGE       ((uintptr_t) 0x40000000)
+#define GRANULARITY ((uintptr_t) 0x10000)
+
+typedef int target_function (void);
+
+static target_function* original_near;
+static target_function* original_far;
+
+static int
+detour_near (void)
+{
+  return original_near () + 1000;
+}
+
+static int
+detour_far (void)
+{
+  return original_far () + 1000;
+}
+
+/* ISO C has no conversion between function and object pointers, so we
+ * copy the representation (they are the same on Windows).
+ */
+static void*
+address (target_function* f)
+{
+  void* r;
+  memcpy (&r, &f, sizeof (r));
+  return r;
+}
+
+static int
+call (void* p)
+{
+  target_function* f;
+  memcpy (&f, &p, sizeof (f));
+  return f ();
+}
+
+static const uint8_t function_code[] = {0xB8, 0x2A, 0x00, 0x00, 0x00, 0xC3};
+
+/* Allocate a page with the function at the first address from 16TB up in
+ * 1TB steps that is free, which is far from the other code of the process.
+ */
+static uint8_t*
+allocate_far (void)
+{
+  for (uintptr_t a = (uintptr_t) 1 << 44; a < (uintptr_t) 1 << 47;
+       a += (uintptr_t) 1 << 40)
+  {
+    uint8_t* p = (uint8_t*) VirtualAlloc ((void*) a,
+                                          CODE_PAGE_SIZE,
+                                          MEM_COMMIT | MEM_RESERVE,
+                                          PAGE_EXECUTE_READWRITE);
+    if (p != NULL)
+    {
+      memset (p, 0xCC, CODE_PAGE_SIZE);
+      memcpy (p, function_code, sizeof (function_code));
+      return p;
+    }
+  }
+
+  assert (0);
+  return NULL;
+}
+
+/* Reservations of the free address space.
+ */
+static void* reservations[4096];
+static size_t reservation_count;
+
+/* Reserve the free address space between the addresses.
+ */
+static void
+reserve (uintptr_t lo, uintptr_t hi)
+{
+  for (uintptr_t a = (lo + GRANULARITY - 1) & ~(GRANULARITY - 1); a < hi; )
+  {
+    MEMORY_BASIC_INFORMATION i;
+    if (VirtualQuery ((void*) a, &i, sizeof (i)) == 0)
+      break;
+
+    uintptr_t e = (uintptr_t) i.BaseAddress + i.RegionSize;
+
+    if (e > hi)
+      e = hi;
+
+    if (i.State == MEM_FREE)
+    {
+      assert (reservation_count != COUNT (reservations));
+
+      void* p = VirtualAlloc ((void*) a, e - a, MEM_RESERVE, PAGE_NOACCESS);
+      assert (p != NULL);
+      reservations[reservation_count++] = p;
+    }
+
+    a = (e + GRANULARITY - 1) & ~(GRANULARITY - 1);
+  }
+}
+
+static void
+release (void)
+{
+  for (size_t i = 0; i != reservation_count; ++i)
+  {
+    BOOL r = VirtualFree (reservations[i], 0, MEM_RELEASE);
+    assert (r);
+  }
+
+  reservation_count = 0;
+}
+
+static void
+print_status (const char* step, enum mh_status s)
+{
+  printf ("%s %s\n", step, mh_status_to_string (s));
+}
+
+static void
+hook_far (void)
+{
+  uint8_t* n = code_allocate (0, function_code, sizeof (function_code));
+  uint8_t* f = allocate_far ();
+
+  print_status ("initialize", mh_initialize ());
+  print_status ("create-near",
+                mh_create_hook (n,
+                                address (&detour_near),
+                                (void**) &original_near));
+  print_status ("create-far",
+                mh_create_hook (f,
+                                address (&detour_far),
+                                (void**) &original_far));
+  print_status ("enable-all", mh_enable_hook (MH_ALL_HOOKS));
+  printf ("call-near %d\n", call (n));
+  printf ("call-far %d\n", call (f));
+  print_status ("uninitialize", mh_uninitialize ());
+
+  VirtualFree (f, 0, MEM_RELEASE);
+  code_free (n);
+}
+
+static void
+hook_below (void)
+{
+  uint8_t* f = allocate_far ();
+  uintptr_t o = (uintptr_t) f;
+
+  reserve (o - RANGE - GRANULARITY, o);
+
+  void* tramp;
+  print_status ("initialize", mh_initialize ());
+  print_status ("create",
+                mh_create_hook (f, address (&detour_far), &tramp));
+  memcpy (&original_far, &tramp, sizeof (tramp));
+  printf ("above %d\n", (uintptr_t) tramp > o ? 1 : 0);
+  print_status ("enable", mh_enable_hook (f));
+  printf ("call %d\n", call (f));
+  print_status ("uninitialize", mh_uninitialize ());
+
+  release ();
+  VirtualFree (f, 0, MEM_RELEASE);
+}
+
+static void
+hook_reserved (void)
+{
+  uint8_t* f = allocate_far ();
+  uintptr_t o = (uintptr_t) f;
+
+  reserve (o - RANGE - GRANULARITY, o);
+  reserve (o + CODE_PAGE_SIZE, o + RANGE + GRANULARITY);
+
+  print_status ("initialize", mh_initialize ());
+  print_status ("create",
+                mh_create_hook (f,
+                                address (&detour_far),
+                                (void**) &original_far));
+  print_status ("uninitialize", mh_uninitialize ());
+
+  release ();
+  VirtualFree (f, 0, MEM_RELEASE);
+}
+
+struct scenario
+{
+  const char* name;
+  void      (*function) (void);
+};
+
+static const struct scenario scenarios[] = {
+  {"far",      &hook_far},
+  {"below",    &hook_below},
+  {"reserved", &hook_reserved}};
+
+int
+main (int argc, char* argv[])
+{
+  if (argc != 2)
+  {
+    fprintf (stderr, "error: expected scenario\n");
+    return 1;
+  }
+
+  for (size_t i = 0; i != COUNT (scenarios); ++i)
+  {
+    if (strcmp (argv[1], scenarios[i].name) == 0)
+    {
+      scenarios[i].function ();
+      return 0;
+    }
+  }
+
+  fprintf (stderr, "error: invalid scenario '%s'\n", argv[1]);
+  return 1;
+}
