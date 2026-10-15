@@ -63,6 +63,7 @@ struct builder
   uint8_t   old_pos;  /* Current instruction offset in the target. */
   uint8_t   new_pos;  /* Current instruction offset in the trampoline. */
   uintptr_t jmp_dest; /* Furthest destination of an internal branch. */
+  uint8_t   dests;    /* Forward internal destinations (offset bits). */
   bool      finished; /* Trampoline is complete. */
 
   uint8_t   code[16]; /* Rewritten current instruction. */
@@ -144,23 +145,28 @@ internal (const struct builder* b, uintptr_t dest)
  * in the trampoline since the branch's offset would be off otherwise. For a
  * forward branch we check this as we relocate that code (see jmp_dest). For
  * a backward branch that code is already relocated, so we compare its
- * length in the target and in the trampoline. Note that this requires the
- * destination to be an instruction boundary since otherwise we can't tell
- * where it is in the trampoline.
+ * length in the target and in the trampoline.
+ *
+ * Note that the destination must be an instruction boundary since the
+ * trampoline may rewrite the instruction that it is in (for example, the
+ * displacement of a RIP-relative instruction). We check this for a backward
+ * branch here and for a forward one once all the code is relocated (see
+ * dests).
  */
 static bool
 keep_branch (struct builder* b, uintptr_t dest, uintptr_t address)
 {
+  const struct mh_trampoline* t = b->trampoline;
+  unsigned int o = (unsigned int) (dest - (uintptr_t) t->target);
+
   if (dest > address)
   {
     if (b->jmp_dest < dest)
       b->jmp_dest = dest;
 
+    b->dests |= (uint8_t) (1u << o);
     return true;
   }
-
-  const struct mh_trampoline* t = b->trampoline;
-  unsigned int o = (unsigned int) (dest - (uintptr_t) t->target);
 
   /* A branch to itself has no code in between.
    */
@@ -458,6 +464,15 @@ mh_create_trampoline (struct mh_trampoline* t)
     b.old_pos = (uint8_t) (b.old_pos + i.length);
   }
   while (!b.finished);
+
+  /* Make sure that the forward internal branches land on instruction
+   * boundaries (see keep_branch()).
+   */
+  for (unsigned int i = 0; i < t->ip_count; ++i)
+    b.dests &= (uint8_t) ~(1u << t->old_ips[i]);
+
+  if (b.dests != 0)
+    return false;
 
   /* If the function is shorter than the hook's jump, then the rest must be
    * padding. If there is no room for even a short jump, then the hook

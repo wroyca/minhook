@@ -160,6 +160,13 @@ $* e8 2b 00 00 00 c3 >>EOO
   : Test that a jump back into the middle of an instruction is refused.
   :
   $* b0 c3 eb fd >'create MH_ERROR_UNSUPPORTED_FUNCTION'
+
+  : forward-middle
+  :
+  : Test that a jump into the middle of a later instruction (the ret that
+  : is the immediate of mov al, 0xc3) is refused.
+  :
+  $* eb 01 b0 c3 >'create MH_ERROR_UNSUPPORTED_FUNCTION'
 }}
 
 : hot-patch
