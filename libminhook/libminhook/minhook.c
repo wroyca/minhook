@@ -112,6 +112,7 @@ struct hook_entry
   uint8_t enabled      : 1;
   uint8_t queue_enable : 1; /* Queued state (see mh_apply_queued()). */
 
+  uint8_t size;       /* Size of the target's code in the trampoline. */
   uint8_t ip_count;   /* Number of instruction boundaries. */
   uint8_t old_ips[8]; /* Boundaries in the target function. */
   uint8_t new_ips[8]; /* Boundaries in the trampoline. */
@@ -845,6 +846,58 @@ uninitialize (void)
   return MH_OK;
 }
 
+/* Return the start and the end of the code that a hook of the target
+ * overwrites or relocates: its jump (into the hot patch area if
+ * patch_above is true) and the size of the code in its trampoline.
+ */
+static void
+code_range (const void* target,
+            bool patch_above,
+            unsigned int size,
+            uintptr_t* b,
+            uintptr_t* e)
+{
+  uintptr_t t = (uintptr_t) target;
+
+  if (patch_above)
+  {
+    *b = t - sizeof (struct mh_jmp_rel);
+    *e = t + sizeof (struct mh_jmp_rel_short);
+  }
+  else
+  {
+    *b = t;
+    *e = t + sizeof (struct mh_jmp_rel);
+  }
+
+  if (*e < t + size)
+    *e = t + size;
+}
+
+/* Return true if the code from b up to e overlaps that of a hook (see
+ * code_range()).
+ *
+ * Two hooks that overwrite the same code would back up each other's jump.
+ * And the trampoline of a hook whose code another hook overwrites relocates
+ * that hook's jump or jumps back into the middle of it.
+ */
+static bool
+overlapping (uintptr_t b, uintptr_t e)
+{
+  for (unsigned int i = 0; i < hooks.size; ++i)
+  {
+    const struct hook_entry* h = &hooks.items[i];
+
+    uintptr_t hb, he;
+    code_range (h->target, h->patch_above, h->size, &hb, &he);
+
+    if (b < he && hb < e)
+      return true;
+  }
+
+  return false;
+}
+
 /* Build the trampoline in the buffer and add the hook for the target.
  */
 static enum mh_status
@@ -855,6 +908,16 @@ add_hook (void* target, void* detour, void* buffer, void** original)
 
   if (!mh_create_trampoline (&t))
     return MH_ERROR_UNSUPPORTED_FUNCTION;
+
+  /* Make sure the hook's code doesn't overlap that of another hook.
+   */
+  {
+    uintptr_t b, e;
+    code_range (target, t.patch_above, t.size, &b, &e);
+
+    if (overlapping (b, e))
+      return MH_ERROR_OVERLAPPING;
+  }
 
   struct hook_entry* h = add_hook_entry ();
 
@@ -869,6 +932,7 @@ add_hook (void* target, void* detour, void* buffer, void** original)
 #endif
   h->trampoline = t.trampoline;
   h->patch_above = t.patch_above;
+  h->size = t.size;
   h->enabled = false;
   h->queue_enable = false;
   h->ip_count = t.ip_count;
@@ -1229,6 +1293,7 @@ mh_status_to_string (enum mh_status s)
     case MH_ERROR_FUNCTION_NOT_FOUND:   return "MH_ERROR_FUNCTION_NOT_FOUND";
     case MH_ERROR_BUSY:                 return "MH_ERROR_BUSY";
     case MH_ERROR_NOT_RETIRED:          return "MH_ERROR_NOT_RETIRED";
+    case MH_ERROR_OVERLAPPING:          return "MH_ERROR_OVERLAPPING";
   }
 
   return "(unknown)";

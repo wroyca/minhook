@@ -20,6 +20,7 @@
   $* 12 >'MH_ERROR_FUNCTION_NOT_FOUND'   : function-not-found
   $* 13 >'MH_ERROR_BUSY'                 : busy
   $* 14 >'MH_ERROR_NOT_RETIRED'          : not-retired
+  $* 15 >'MH_ERROR_OVERLAPPING'          : overlapping
 }}
 
 : out-of-range
@@ -27,7 +28,7 @@
 : Test that a value outside the enumeration has a placeholder name.
 :
 {{
-  $* 15 >'(unknown)' : above
+  $* 16 >'(unknown)' : above
   $* -2 >'(unknown)' : below
 }}
 

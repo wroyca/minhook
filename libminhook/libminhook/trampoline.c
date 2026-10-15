@@ -520,6 +520,8 @@ mh_create_trampoline (struct mh_trampoline* t)
     t->patch_above = true;
   }
 
+  t->size = b.old_pos;
+
 #if defined(_M_X64) || defined(__x86_64__)
   /* The relay jumps to the detour. The hook's relative jump reaches it
    * since it is in the same slot as the trampoline.

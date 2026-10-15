@@ -1,0 +1,89 @@
+# Refusing hooks whose code overlaps that of another hook. See the driver
+# for the functions.
+#
+
+: patch
+:
+: Test that a hook within the code that another hook's jump overwrites is
+: refused.
+:
+$* patch >>EOO
+  initialize MH_OK
+  create-f MH_OK
+  create-g MH_ERROR_OVERLAPPING
+  uninitialize MH_OK
+  EOO
+
+: relocated
+:
+: Test that a hook within the code that another hook's trampoline relocates
+: is refused, as is a hook whose trampoline relocates the code that another
+: hook's jump overwrites.
+:
+$* relocated >>EOO
+  initialize MH_OK
+  create-f MH_OK
+  create-g MH_ERROR_OVERLAPPING
+  uninitialize MH_OK
+  initialize MH_OK
+  create-g MH_OK
+  create-f MH_ERROR_OVERLAPPING
+  uninitialize MH_OK
+  EOO
+
+: hot-patch
+:
+: Test that a hook whose jump goes into the padding that another hook's jump
+: overwrites is refused.
+:
+$* hot-patch >>EOO
+  initialize MH_OK
+  create-f MH_OK
+  create-g MH_ERROR_OVERLAPPING
+  uninitialize MH_OK
+  EOO
+
+: adjacent
+:
+: Test that hooks whose code is adjacent are both created.
+:
+$* adjacent >>EOO
+  initialize MH_OK
+  create-f MH_OK
+  create-g MH_OK
+  enable-all MH_OK
+  call-f 1007
+  call-g 2008
+  uninitialize MH_OK
+  call-f 7
+  call-g 8
+  EOO
+
+: removed
+:
+: Test that removing a hook releases its code for another hook.
+:
+$* removed >>EOO
+  initialize MH_OK
+  create-f MH_OK
+  create-g MH_ERROR_OVERLAPPING
+  remove-f MH_OK
+  create-g MH_OK
+  uninitialize MH_OK
+  EOO
+
+: invalid
+:
+{{
+  : missing
+  :
+  : Test that the scenario is required.
+  :
+  $* 2>'error: expected scenario' != 0
+
+  : unknown
+  :
+  : Test that an unknown scenario is rejected.
+  :
+  $* bogus 2>"error: invalid scenario 'bogus'" != 0
+}}

@@ -63,7 +63,8 @@ enum mh_status
   MH_ERROR_MODULE_NOT_FOUND,     /* Module not loaded. */
   MH_ERROR_FUNCTION_NOT_FOUND,   /* Function not exported by the module. */
   MH_ERROR_BUSY,                 /* Trampoline executed by a thread. */
-  MH_ERROR_NOT_RETIRED           /* No retired trampoline with the id. */
+  MH_ERROR_NOT_RETIRED,          /* No retired trampoline with the id. */
+  MH_ERROR_OVERLAPPING           /* Code overlaps that of another hook. */
 };
 
 /* Identifier of a retired trampoline (see mh_remove_hook()). The library
@@ -114,8 +115,10 @@ mh_uninitialize (void);
  * Return MH_ERROR_NOT_EXECUTABLE if the target or the detour is outside
  * committed executable memory, MH_ERROR_ALREADY_CREATED if the target
  * already has a hook, MH_ERROR_UNSUPPORTED_FUNCTION if the target's
- * starting instructions can't be relocated into the trampoline, and
- * MH_ERROR_MEMORY_ALLOC if unable to allocate the trampoline or the hook.
+ * starting instructions can't be relocated into the trampoline,
+ * MH_ERROR_OVERLAPPING if the code that the hook overwrites or relocates
+ * overlaps that of another hook, and MH_ERROR_MEMORY_ALLOC if unable to
+ * allocate the trampoline or the hook.
  */
 LIBMINHOOK_SYMEXPORT enum mh_status
 mh_create_hook (void* target, void* detour, void** original);

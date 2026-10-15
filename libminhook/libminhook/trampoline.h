@@ -121,6 +121,7 @@ struct mh_trampoline
 #endif
 
   bool    patch_above; /* [out] Jump goes into the hot patch area. */
+  uint8_t size;        /* [out] Size of the target's code it relocates. */
   uint8_t ip_count;    /* [out] Number of instruction boundaries. */
   uint8_t old_ips[8];  /* [out] Boundaries in the target function. */
   uint8_t new_ips[8];  /* [out] Boundaries in the trampoline. */
