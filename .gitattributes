@@ -17,3 +17,20 @@
 # Use `binary` to make sure certain files are never auto-detected as text.
 #
 #*.png binary
+
+# Linguist, which GitHub's syntax highlighting and language statistics come
+# from, has no build2 language and takes a buildfile for Ruby (Buildr's
+# Buildfile). So we keep the build2 files out of the statistics and highlight
+# each as the language it is closest to, in both of build2's naming schemes:
+# buildfiles as makefiles, testscripts as shell scripts, and manifests (the
+# identity register is a manifest list as well) as YAML.
+#
+buildfile    linguist-detectable=false linguist-language=Makefile
+build2file   linguist-detectable=false linguist-language=Makefile
+*.build      linguist-detectable=false linguist-language=Makefile
+*.build2     linguist-detectable=false linguist-language=Makefile
+testscript   linguist-detectable=false linguist-language=Shell
+*.testscript linguist-detectable=false linguist-language=Shell
+manifest     linguist-detectable=false linguist-language=YAML
+*.manifest   linguist-detectable=false linguist-language=YAML
+identities   linguist-detectable=false linguist-language=YAML
