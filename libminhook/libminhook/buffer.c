@@ -33,19 +33,23 @@
 #include <assert.h>
 #include <stdint.h>
 
-/* Size of a block (the VirtualAlloc() page size).
+/* Size of a block, which is one page.
  */
 #define MEMORY_BLOCK_SIZE 0x1000
 
-/* Maximum distance between a block and the origin of its slots.
+/* Maximum distance between a block and the origin of its slots (1 GiB),
+ * which a 32-bit relative jump reaches with room to spare.
  */
 #define MAX_MEMORY_RANGE 0x40000000
 
+/* Protections that allow executing the memory.
+ */
 #define PAGE_EXECUTE_FLAGS                                                   \
   (PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE |               \
    PAGE_EXECUTE_WRITECOPY)
 
-/* Slot. A free slot links to the next free slot of its block.
+/* Slot for a trampoline. A free slot links to the next free slot of its
+ * block.
  */
 union memory_slot
 {
@@ -53,7 +57,7 @@ union memory_slot
   uint8_t buffer[MH_MEMORY_SLOT_SIZE];
 };
 
-/* Block. The header occupies the first slot of the block.
+/* Block of slots. The header occupies the first slot.
  */
 struct memory_block
 {
@@ -62,13 +66,13 @@ struct memory_block
   unsigned int used;       /* Number of slots in use. */
 };
 
-/* Allocated blocks.
+/* Allocated blocks, the most recent first.
  */
 static struct memory_block* blocks;
 
 #if defined(_M_X64) || defined(__x86_64__)
-/* The application address range and the allocation granularity, which
- * stay the same for the life of the process.
+/* System information for the block search (see get_memory_block()). It
+ * stays the same for the life of the process, so we query it once.
  */
 static SYSTEM_INFO system_info;
 #endif
@@ -95,6 +99,9 @@ mh_uninitialize_buffer (void)
   }
 }
 
+/* Allocate a block at the address or, if it is NULL, anywhere. Return NULL
+ * if unable to.
+ */
 static struct memory_block*
 allocate_block (void* address)
 {
@@ -107,8 +114,10 @@ allocate_block (void* address)
 #if defined(_M_X64) || defined(__x86_64__)
 
 /* Return the closest free region below the address and at or above the
- * minimum or NULL if there is none. The search is in the allocation
- * granularity steps.
+ * minimum or NULL if there is none.
+ *
+ * We search in the allocation granularity steps since VirtualAlloc() rounds
+ * the address of a new allocation down to the granularity.
  */
 static void*
 find_previous_free_region (void* address, uintptr_t minimum, DWORD granularity)
@@ -144,7 +153,8 @@ find_previous_free_region (void* address, uintptr_t minimum, DWORD granularity)
 }
 
 /* Return the closest free region above the address and at or below the
- * maximum or NULL if there is none.
+ * maximum or NULL if there is none. See find_previous_free_region() for
+ * details.
  */
 static void*
 find_next_free_region (void* address, uintptr_t maximum, DWORD granularity)
@@ -270,6 +280,8 @@ get_memory_block (void* origin)
   maximum -= MEMORY_BLOCK_SIZE - 1;
 #endif
 
+  /* Look for a block within the range that has a free slot.
+   */
   for (b = blocks; b != NULL; b = b->next)
   {
 #if defined(_M_X64) || defined(__x86_64__)
@@ -280,13 +292,16 @@ get_memory_block (void* origin)
       return b;
   }
 
+  /* Allocate a new block, trying below the origin first.
+   */
 #if defined(_M_X64) || defined(__x86_64__)
   b = allocate_block_below (origin, minimum, si->dwAllocationGranularity);
 
   if (b == NULL)
     b = allocate_block_above (origin, maximum, si->dwAllocationGranularity);
 #else
-  /* On x86 a block can be anywhere.
+  /* On x86 a relative jump reaches the whole address space, so a block can
+   * be anywhere.
    */
   (void) origin;
   b = allocate_block (NULL);

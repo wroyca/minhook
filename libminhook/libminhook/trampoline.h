@@ -88,7 +88,8 @@ struct mh_jcc_rel
 /* 7* 0E:         j* +16
  * FF25 00000000: jmp [+6]
  *
- * An absolute conditional jump, which x64 lacks.
+ * x64 has no absolute conditional jump, so we jump over an absolute jump
+ * with the inverted condition.
  */
 struct mh_jcc_abs
 {
@@ -116,10 +117,10 @@ struct mh_trampoline
   void* trampoline; /* [in] Buffer for the trampoline and the relay. */
 
 #if defined(_M_X64) || defined(__x86_64__)
-  void* relay;      /* [out] Relay function that jumps to the detour. */
+  void* relay;      /* [out] Jump to the detour within the hook's reach. */
 #endif
 
-  bool    patch_above; /* [out] Patch the hot patch area. */
+  bool    patch_above; /* [out] Jump goes into the hot patch area. */
   uint8_t ip_count;    /* [out] Number of instruction boundaries. */
   uint8_t old_ips[8];  /* [out] Boundaries in the target function. */
   uint8_t new_ips[8];  /* [out] Boundaries in the trampoline. */

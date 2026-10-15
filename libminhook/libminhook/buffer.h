@@ -30,10 +30,10 @@
 
 #include <stdbool.h>
 
-/* Executable memory slots for trampolines.
+/* Executable memory slots for the trampolines.
  *
- * On x64 each slot is allocated within 1024MB of its origin (normally the
- * hooked function) so that the relative jumps between the two can reach.
+ * On x64 we allocate each slot within 1 GiB of its origin (the target
+ * function) so that the relative jumps between the two reach.
  */
 
 /* Size of a slot.
@@ -44,6 +44,8 @@
 #  define MH_MEMORY_SLOT_SIZE 32
 #endif
 
+/* Initialize the slot allocator. Call before the other functions below.
+ */
 void
 mh_initialize_buffer (void);
 
@@ -57,6 +59,9 @@ mh_uninitialize_buffer (void);
 void*
 mh_allocate_buffer (void* origin);
 
+/* Return the slot to its block and release the block if it has no slots in
+ * use.
+ */
 void
 mh_free_buffer (void* buffer);
 

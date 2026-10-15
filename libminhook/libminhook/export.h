@@ -18,14 +18,10 @@
 #  endif
 #else
 /* If none of the above macros are defined, then we assume we are being used
- * by some third-party build system that cannot/doesn't signal the library
- * type. Note that this fallback works for both static and shared libraries
- * provided the library only exports functions (in other words, no global
- * exported data) and for the shared case the result will be sub-optimal
- * compared to having dllimport. If, however, your library does export data,
- * then you will probably want to replace the fallback with the (commented
- * out) error since it won't work for the shared case.
+ * by some third-party build system that doesn't signal the library type.
+ * This fallback works for both static and shared libraries since we only
+ * export functions. For the shared case the calls go through the import
+ * thunks, which is a bit slower than with dllimport.
  */
 #  define LIBMINHOOK_SYMEXPORT         /* Using static or shared. */
-/*#  error define LIBMINHOOK_STATIC or LIBMINHOOK_SHARED preprocessor macro to signal libminhook library type being linked */
 #endif

@@ -39,10 +39,10 @@
 #include <libminhook/buffer.h>
 #include <libminhook/trampoline.h>
 
-/* mh_create_hook_api_ex() copies a FARPROC into a void*, which requires
- * the two to have the same size. We check this with an array whose size is
- * negative otherwise rather than with _Static_assert since MSVC only
- * supports the latter in its C11 mode, which build2 does not enable.
+/* mh_create_hook_api_ex() copies a FARPROC into a void*, so the two must
+ * have the same size. We check this with an array whose size turns negative
+ * if they differ since MSVC only supports _Static_assert in its C11 mode,
+ * which build2 doesn't enable.
  */
 typedef char
 mh_farproc_size_check[sizeof (FARPROC) == sizeof (void*) ? 1 : -1];
@@ -52,14 +52,18 @@ mh_farproc_size_check[sizeof (FARPROC) == sizeof (void*) ? 1 : -1];
 #define INITIAL_HOOK_CAPACITY   32
 #define INITIAL_THREAD_CAPACITY 128
 
-/* Special hook positions.
+/* Positions that denote no hook (see find_hook_entry()) and all the hooks
+ * (see freeze()). They can share the value since no function takes both.
  */
 #define INVALID_HOOK_POS UINT_MAX
 #define ALL_HOOKS_POS    UINT_MAX
 
-/* Return the handle of the process's thread that follows the thread (the
- * first thread if NULL) with the access rights. ntdll exports this function
- * since Windows Vista and no Win32 header declares it.
+/* Open the process's thread that follows the thread (or the first one if
+ * thread is NULL) with the access rights and store its handle in next.
+ * Return NO_MORE_THREADS after the last thread.
+ *
+ * ntdll exports this function since Windows Vista. We declare it ourselves
+ * since no Win32 header does.
  */
 NTSYSAPI NTSTATUS NTAPI
 NtGetNextThread (HANDLE process,
@@ -69,18 +73,20 @@ NtGetNextThread (HANDLE process,
                  ULONG flags,
                  PHANDLE next);
 
-/* The status that NtGetNextThread() returns after the last thread
- * (STATUS_NO_MORE_ENTRIES).
+/* Status that NtGetNextThread() returns after the last thread. This is
+ * STATUS_NO_MORE_ENTRIES, which we spell out since ntstatus.h redefines the
+ * status macros of winnt.h.
  */
 #define NO_MORE_THREADS ((NTSTATUS) 0x8000001AL)
 
-/* Access rights for suspending and resuming threads.
+/* Access rights that freezing a thread needs (see freeze()).
  */
 #define THREAD_ACCESS                                                        \
   (THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT | THREAD_QUERY_INFORMATION |   \
    THREAD_SET_CONTEXT)
 
-/* Hook state change that is being applied.
+/* Change that is being applied to the hooks. With ACTION_APPLY_QUEUED each
+ * hook takes its queued state.
  */
 enum action
 {
@@ -89,16 +95,18 @@ enum action
   ACTION_APPLY_QUEUED
 };
 
+/* Hook of a target function.
+ */
 struct hook_entry
 {
   void*   target;     /* Target function. */
   void*   detour;     /* Detour or, on x64, relay function. */
   void*   trampoline; /* Trampoline function. */
-  uint8_t backup[8];  /* Part of the target that the hook overwrites. */
+  uint8_t backup[8];  /* Code that the hook overwrites. */
 
-  uint8_t patch_above  : 1; /* Patches the hot patch area. */
+  uint8_t patch_above  : 1; /* Jump goes into the hot patch area. */
   uint8_t enabled      : 1;
-  uint8_t queue_enable : 1; /* Queued state (differs from enabled if any). */
+  uint8_t queue_enable : 1; /* Queued state (see mh_apply_queued()). */
 
   uint8_t ip_count;   /* Number of instruction boundaries. */
   uint8_t old_ips[8]; /* Boundaries in the target function. */
@@ -119,10 +127,14 @@ struct frozen_threads
  */
 static volatile LONG locked = FALSE;
 
-/* Private heap. The library is initialized if it is not NULL.
+/* Library's private heap, which is not NULL while the library is
+ * initialized.
  */
 static HANDLE heap = NULL;
 
+/* Hooks in the order of their creation, except that removing one moves the
+ * last hook into its place.
+ */
 static struct
 {
   struct hook_entry* items;
@@ -174,7 +186,7 @@ add_hook_entry (void)
 }
 
 /* Delete the entry by moving the last entry into its position. Shrink the
- * list if it is at most half full.
+ * list if it is at most half full, keeping it as is if unable to.
  */
 static void
 delete_hook_entry (unsigned int pos)
@@ -254,7 +266,8 @@ find_new_ip (const struct hook_entry* h, uintptr_t ip)
 
 /* If the suspended thread is within the code that the action on the hook
  * at the position (or on all the hooks) patches, then move its
- * instruction pointer to the equivalent instruction.
+ * instruction pointer to the equivalent instruction. Leave the thread where
+ * it is if unable to read its context.
  */
 static void
 process_thread_ips (HANDLE thread, unsigned int pos, enum action a)
@@ -333,7 +346,8 @@ append_thread (struct frozen_threads* ts, HANDLE thread)
  * Return false if unable to.
  *
  * NtGetNextThread() walks only the process's own threads and opens each of
- * them for us.
+ * them for us. It takes the previous thread to find the next one, so we
+ * close the current thread's handle only once past it.
  */
 static bool
 collect_threads (struct frozen_threads* ts)
@@ -370,7 +384,7 @@ collect_threads (struct frozen_threads* ts)
 }
 
 /* Collect the handles of the process's threads other than the current one.
- * Return false if unable to.
+ * Return false if unable to, closing the handles collected so far.
  */
 static bool
 enumerate_threads (struct frozen_threads* ts)
@@ -391,7 +405,9 @@ enumerate_threads (struct frozen_threads* ts)
 }
 
 /* Suspend the process's other threads and move those that are within the
- * code that the action patches (see process_thread_ips()).
+ * code that the action patches (see process_thread_ips()). Leave alone the
+ * threads that can't be suspended. Return MH_ERROR_MEMORY_ALLOC if unable
+ * to enumerate the threads.
  */
 static enum mh_status
 freeze (struct frozen_threads* ts, unsigned int pos, enum action a)
@@ -419,6 +435,8 @@ freeze (struct frozen_threads* ts, unsigned int pos, enum action a)
   return MH_OK;
 }
 
+/* Resume and close the suspended threads and free the list.
+ */
 static void
 unfreeze (struct frozen_threads* ts)
 {
@@ -440,7 +458,10 @@ unfreeze (struct frozen_threads* ts)
 }
 
 /* Write the hook's jump into the target function or restore the original
- * code.
+ * code. Return MH_ERROR_MEMORY_PROTECT if unable to make the code writable.
+ *
+ * Note that we ignore the failure to restore the protection since the code
+ * is patched by then.
  */
 static enum mh_status
 patch_hook (unsigned int pos, bool enable)
@@ -506,11 +527,15 @@ patch_hook_frozen (unsigned int pos, bool enable, enum action a)
 }
 
 /* Apply the action to all the hooks with the process's other threads
- * suspended.
+ * suspended. Stop at the first hook that fails, leaving the earlier ones
+ * changed.
  */
 static enum mh_status
 patch_hooks (enum action a)
 {
+  /* Find the first hook that the action changes. If there is none, then we
+   * don't need to suspend the threads.
+   */
   unsigned int first = INVALID_HOOK_POS;
 
   for (unsigned int i = 0; i < hooks.size; ++i)
@@ -568,6 +593,8 @@ unlock (void)
   InterlockedExchange (&locked, FALSE);
 }
 
+/* The API functions without the lock (see minhook.h for their semantics).
+ */
 static enum mh_status
 initialize (void)
 {
@@ -589,16 +616,19 @@ uninitialize (void)
   if (heap == NULL)
     return MH_ERROR_NOT_INITIALIZED;
 
+  /* Disable all the hooks first. If unable to, then stay initialized so
+   * that the caller can try again.
+   */
   enum mh_status r = patch_hooks (ACTION_DISABLE);
 
   if (r != MH_OK)
     return r;
 
-  /* Destroying the heap frees the hook list. Free it explicitly as well
-   * since some tools would otherwise report a leak.
-   */
   mh_uninitialize_buffer ();
 
+  /* Destroying the heap frees the hook list. We free it explicitly as well
+   * since some tools would otherwise report a leak.
+   */
   HeapFree (heap, 0, hooks.items);
   HeapDestroy (heap);
 
@@ -611,7 +641,7 @@ uninitialize (void)
   return MH_OK;
 }
 
-/* Add the hook entry for the target given its trampoline buffer.
+/* Build the trampoline in the buffer and add the hook for the target.
  */
 static enum mh_status
 add_hook (void* target, void* detour, void* buffer, void** original)
@@ -706,7 +736,13 @@ remove_hook (void* target)
   return MH_OK;
 }
 
-/* Note that the threads are processed for enabling in both cases.
+/* Note that we process the threads for enabling in both cases, the same as
+ * MinHook. So disabling a single hook leaves the threads that are within
+ * its trampoline there, which stays valid until mh_remove_hook() moves them
+ * out and frees it.
+ *
+ * @@ A thread that is suspended on the long jump in the hot patch area
+ *    stays there and runs the restored padding.
  */
 static enum mh_status
 enable_hook (void* target, bool enable)
@@ -853,14 +889,14 @@ mh_create_hook_api_ex (const wchar_t* module,
   if (m == NULL)
     return MH_ERROR_MODULE_NOT_FOUND;
 
-  /* ISO C has no conversion between function and object pointers, so copy
-   * the representation (they are the same on Windows).
-   */
   FARPROC f = GetProcAddress (m, function);
 
   if (f == NULL)
     return MH_ERROR_FUNCTION_NOT_FOUND;
 
+  /* ISO C has no conversion between function and object pointers, so we
+   * copy the representation (they are the same on Windows).
+   */
   void* t;
   memcpy (&t, &f, sizeof (t));
 

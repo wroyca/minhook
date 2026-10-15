@@ -49,6 +49,8 @@ typedef ZydisDecodedInstruction instruction;
 #  define MACHINE_MODE ZYDIS_MACHINE_MODE_LEGACY_32
 #  define STACK_WIDTH  ZYDIS_STACK_WIDTH_32
 
+/* Without the relay the trampoline has the whole slot.
+ */
 #  define TRAMPOLINE_MAX_SIZE MH_MEMORY_SLOT_SIZE
 #endif
 
@@ -60,15 +62,17 @@ struct builder
 
   uint8_t   old_pos;  /* Current instruction offset in the target. */
   uint8_t   new_pos;  /* Current instruction offset in the trampoline. */
-  uintptr_t jmp_dest; /* Furthest destination of an internal jump. */
+  uintptr_t jmp_dest; /* Furthest destination of an internal branch. */
   bool      finished; /* Trampoline is complete. */
 
   uint8_t   code[16]; /* Rewritten current instruction. */
 };
 
-/* Encode the jump, call, or conditional jump (with the condition code) to
- * the destination into the builder's code and return its size. The address
- * is that of the rewritten instruction in the trampoline.
+/* Encode the branch to the destination into the builder's code and return
+ * its size. The address is that of the branch in the trampoline.
+ *
+ * On x64 we encode absolute branches since the destination may be out of
+ * the reach of a relative one.
  */
 static unsigned int
 encode_jmp (struct builder* b, uintptr_t dest, uintptr_t address)
@@ -147,8 +151,8 @@ jcc (const instruction* i)
           (i->opcode & 0xF0) == 0x80);
 }
 
-/* Return true if the instruction is loopne, loope, loop, or jcxz/jecxz/
- * jrcxz (E0 to E3).
+/* Return true if the instruction is from the loop and jcxz family (E0 to
+ * E3).
  */
 static bool
 loop (const instruction* i)
@@ -194,7 +198,7 @@ relocate (struct builder* b,
   else if (branch && i->operand_width == 16)
   {
     /* A relative branch with the 16-bit operand size truncates the
-     * instruction pointer to 16 bits, which the rewritten branch cannot
+     * instruction pointer to 16 bits, which the rewritten branch can't
      * reproduce.
      */
     return false;
@@ -251,15 +255,16 @@ relocate (struct builder* b,
       *code = b->code;
       *size = encode_jmp (b, dest, new_address);
 
-      /* Complete the function unless the jump is within a branch.
+      /* The jump completes the function unless it is within a branch.
        */
       b->finished = old_address >= b->jmp_dest;
     }
   }
   else if (branch && (jcc (i) || loop (i)))
   {
-    /* Relative jcc, as well as loop, loope, loopne, jcxz, jecxz, and
-     * jrcxz, which only have the 8-bit form.
+    /* Relative jcc or loop (see loop()). We can only keep a loop that stays
+     * within the code that the hook overwrites since it has no form that
+     * reaches further.
      */
     uintptr_t dest = branch_destination (i, old_address);
 
@@ -321,13 +326,12 @@ mh_create_trampoline (struct mh_trampoline* t)
   t->patch_above = false;
   t->ip_count = 0;
 
-  /* The decoder only refuses an invalid combination of the machine mode and
-   * the stack width and an invalid decoder mode.
+  /* Set up the decoder. It only fails for an invalid combination of the
+   * machine mode and stack width or an invalid decoder mode, neither of
+   * which we pass.
    *
-   * The minimal decoder mode skips the semantic analysis and still fills
-   * everything that we use: the length, the mnemonic, the opcode and its
-   * map, the effective operand size and address width, the ModR/M
-   * attribute, and the raw fields.
+   * The minimal decoder mode skips the semantic analysis. It still fills
+   * every field that relocate() and its helpers read.
    */
   ZydisDecoder d;
   ZyanStatus s = ZydisDecoderInit (&d, MACHINE_MODE, STACK_WIDTH);
@@ -360,18 +364,21 @@ mh_create_trampoline (struct mh_trampoline* t)
     if (!relocate (&b, &i, old_address, new_address, &code, &size))
       return false;
 
-    /* A rewritten instruction cannot be longer within a branch, since the
-     * branch offsets would change.
+    /* Within a branch a rewritten instruction must keep its length since
+     * the branch's offsets would change otherwise.
      */
     if (old_address < b.jmp_dest && size != i.length)
       return false;
 
+    /* Make sure the trampoline fits into the slot.
+     */
     if (b.new_pos + size > TRAMPOLINE_MAX_SIZE)
       return false;
 
     /* The trampoline is complete once it covers the hook's jump, so it
-     * holds at most one instruction for each of the jump's 5 bytes and the
-     * jump back to the rest of the target, which fit into the boundaries.
+     * holds at most one instruction for each of the jump's 5 bytes plus the
+     * jump back to the rest of the target. That is 6 boundaries at most,
+     * which old_ips has room for.
      */
     assert (t->ip_count < sizeof (t->old_ips));
 
