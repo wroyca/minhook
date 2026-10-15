@@ -516,6 +516,9 @@ enumerate_threads (struct frozen_threads* ts)
 /* Suspend the process's other threads, leaving alone those that can't be
  * suspended. Return MH_ERROR_MEMORY_ALLOC if unable to enumerate the
  * threads.
+ *
+ * Note that the caller must not use the process heap until unfreeze()
+ * since a suspended thread may hold its lock.
  */
 static enum mh_status
 freeze (struct frozen_threads* ts)
@@ -973,24 +976,24 @@ reclaim (mh_retirement_id id)
   /* See if a thread executes the trampoline.
    */
   uintptr_t t = (uintptr_t) retirements.items[pos].trampoline;
+  bool busy = false;
 
-  for (unsigned int i = 0; i < ts.size; ++i)
-  {
-    if (executing (ts.items[i], t))
-    {
-      r = MH_ERROR_BUSY;
-      break;
-    }
-  }
-
-  if (r == MH_OK)
-  {
-    mh_free_buffer ((void*) t);
-    delete_retirement (pos);
-  }
+  for (unsigned int i = 0; i < ts.size && !busy; ++i)
+    busy = executing (ts.items[i], t);
 
   unfreeze (&ts);
-  return r;
+
+  if (busy)
+    return MH_ERROR_BUSY;
+
+  /* Free the trampoline with the threads resumed since deleting the
+   * retirement may free the list from the process heap, whose lock a
+   * suspended thread may hold.
+   */
+  mh_free_buffer ((void*) t);
+  delete_retirement (pos);
+
+  return MH_OK;
 }
 
 /* Note that MinHook processes the threads for enabling in both cases. We

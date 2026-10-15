@@ -53,6 +53,12 @@ struct fault_import
 
 static struct fault_import fault_imports[FAULT_COUNT];
 
+/* Function that the SuspendThread() wrapper calls with the thread before
+ * suspending it, unless NULL. It lets a test put the thread into a state
+ * that it is suspended in (see fault/driver.c).
+ */
+static void (*fault_before_suspend) (HANDLE);
+
 /* Number of the thread handles that NtGetNextThread() returned to the
  * library and that it hasn't closed yet. Note that the library closes no
  * other handles.
@@ -181,6 +187,9 @@ fault_suspend_thread (HANDLE t)
     SetLastError (ERROR_ACCESS_DENIED);
     return (DWORD) -1;
   }
+
+  if (fault_before_suspend != NULL)
+    fault_before_suspend (t);
 
   return ((DWORD (WINAPI*) (HANDLE))
           fault_imports[FAULT_SUSPEND_THREAD].function) (t);

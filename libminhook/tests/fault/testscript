@@ -352,6 +352,19 @@ $* reclaim-context >>EOO
   uninitialize MH_OK
   EOO
 
+: reclaim-heap
+:
+: Test that reclaiming doesn't use the process heap while the threads are
+: suspended since a suspended thread may hold its lock.
+:
+$* reclaim-heap >>EOO
+  initialize MH_OK
+  create MH_OK
+  remove MH_OK
+  reclaim MH_OK
+  uninitialize MH_OK
+  EOO
+
 : invalid
 :
 {{

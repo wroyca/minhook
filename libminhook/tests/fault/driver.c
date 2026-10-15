@@ -45,6 +45,8 @@
  * reclaim-thread      NtGetNextThread() when reclaiming a trampoline
  * reclaim-suspend     SuspendThread() when reclaiming a trampoline
  * reclaim-context     GetThreadContext() when reclaiming a trampoline
+ * reclaim-heap        reclaim a trampoline while the thread that the library
+ *                     suspends holds the process heap's lock
  *
  * After enabling, the scenarios that enable a single hook also print the
  * number of the thread handles that the library hasn't closed.
@@ -604,6 +606,67 @@ reclaim_context (void)
   reclaim_failing (FAULT_THREAD_CONTEXT, (unsigned) -1);
 }
 
+/* A thread that takes the process heap's lock when asked to and releases
+ * it after a while.
+ */
+static HANDLE take_heap;
+static HANDLE heap_taken;
+
+static DWORD WINAPI
+hold_heap (void* p)
+{
+  (void) p;
+
+  WaitForSingleObject (take_heap, INFINITE);
+  HeapLock (GetProcessHeap ());
+  SetEvent (heap_taken);
+  Sleep (100);
+  HeapUnlock (GetProcessHeap ());
+  return 0;
+}
+
+static void
+lock_heap_before_suspend (HANDLE t)
+{
+  (void) t;
+
+  SetEvent (take_heap);
+  WaitForSingleObject (heap_taken, INFINITE);
+}
+
+/* The library suspends the thread right after it takes the lock. Note that
+ * reclaiming the only retired trampoline frees the retirement list from the
+ * process heap, which then waits for the lock.
+ */
+static void
+reclaim_heap (void)
+{
+  mh_retirement_id id = 0;
+
+  take_heap = CreateEventW (NULL, TRUE, FALSE, NULL);
+  heap_taken = CreateEventW (NULL, TRUE, FALSE, NULL);
+  assert (take_heap != NULL && heap_taken != NULL);
+
+  HANDLE t = CreateThread (NULL, 0, &hold_heap, NULL, 0, NULL);
+  assert (t != NULL);
+
+  print_status ("initialize", mh_initialize ());
+  print_status ("create", create_a ());
+  print_status ("remove", mh_remove_hook (address (&target_a), &id));
+
+  fault_before_suspend = &lock_heap_before_suspend;
+  enum mh_status s = mh_reclaim (id);
+  fault_before_suspend = NULL;
+
+  print_status ("reclaim", s);
+  print_status ("uninitialize", mh_uninitialize ());
+
+  WaitForSingleObject (t, INFINITE);
+  CloseHandle (t);
+  CloseHandle (heap_taken);
+  CloseHandle (take_heap);
+}
+
 /* On x64 the library tries the next free region within reach. On x86 it
  * lets the system choose the address, so it has no other region to try.
  */
@@ -643,7 +706,8 @@ static const struct scenario scenarios[] = {
   {"retire-grow",          &retire_grow},
   {"reclaim-thread",       &reclaim_thread},
   {"reclaim-suspend",      &reclaim_suspend},
-  {"reclaim-context",      &reclaim_context}};
+  {"reclaim-context",      &reclaim_context},
+  {"reclaim-heap",         &reclaim_heap}};
 
 int
 main (int argc, char* argv[])
