@@ -1,8 +1,9 @@
 # minhook - x86/x64 API hooking C library for Windows
 
-This repository contains the `libminhook` C library, derived from
-[MinHook](https://github.com/TsudaKageyu/minhook), which hooks functions in
-the current process on x86 and x64 Windows.
+This repository contains the `libminhook` C library, a maintained fork of
+[MinHook](https://github.com/TsudaKageyu/minhook) 1.3.4, which hooks
+functions in the current process on x86 and x64 Windows. The package
+[`README.md`](libminhook/README.md) describes how it differs from MinHook.
 
 This file contains setup instructions and other details that are more
 appropriate for development rather than consumption. If you want to use
