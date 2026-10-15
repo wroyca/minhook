@@ -43,7 +43,7 @@ extern "C"
 {
 #endif
 
-/* Status that the library functions return.
+/* Library function status.
  */
 enum mh_status
 {
@@ -57,22 +57,22 @@ enum mh_status
   MH_ERROR_ENABLED,              /* Hook already enabled. */
   MH_ERROR_DISABLED,             /* Hook already disabled. */
   MH_ERROR_NOT_EXECUTABLE,       /* Address outside executable memory. */
-  MH_ERROR_UNSUPPORTED_FUNCTION, /* Target's code can't be relocated. */
+  MH_ERROR_UNSUPPORTED_FUNCTION, /* Target's code not relocatable. */
   MH_ERROR_MEMORY_ALLOC,         /* Unable to allocate memory. */
   MH_ERROR_MEMORY_PROTECT,       /* Unable to change memory protection. */
   MH_ERROR_MODULE_NOT_FOUND,     /* Module not loaded. */
   MH_ERROR_FUNCTION_NOT_FOUND,   /* Function not exported by the module. */
   MH_ERROR_BUSY,                 /* Trampoline executed by a thread. */
   MH_ERROR_NOT_RETIRED,          /* No retired trampoline with the id. */
-  MH_ERROR_OVERLAPPING           /* Code overlaps that of another hook. */
+  MH_ERROR_OVERLAPPING           /* Overlap with another hook's code. */
 };
 
-/* Identifier of a retired trampoline (see mh_remove_hook()). The library
- * never issues 0 and never issues the same identifier twice.
+/* Retired trampoline identifier (see mh_remove_hook()). The library never
+ * issues 0 or the same identifier twice.
  */
 typedef uint64_t mh_retirement_id;
 
-/* Target that denotes all the hooks (see mh_enable_hook() and
+/* Special target that denotes all the hooks (see mh_enable_hook() and
  * mh_queue_enable_hook()).
  */
 #define MH_ALL_HOOKS NULL
@@ -83,7 +83,7 @@ typedef uint64_t mh_retirement_id;
  * return MH_ERROR_NOT_INITIALIZED if it is not.
  *
  * Note also that the library never frees a trampoline on its own since it
- * can't tell whether some thread may still enter it. See mh_remove_hook()
+ * cannot tell whether some thread may still enter it. See mh_remove_hook()
  * and mh_reclaim() for details.
  */
 
@@ -115,7 +115,7 @@ mh_uninitialize (void);
  * Return MH_ERROR_NOT_EXECUTABLE if the target or the detour is outside
  * committed executable memory, MH_ERROR_ALREADY_CREATED if the target
  * already has a hook, MH_ERROR_UNSUPPORTED_FUNCTION if the target's
- * starting instructions can't be relocated into the trampoline,
+ * starting instructions cannot be relocated into the trampoline,
  * MH_ERROR_OVERLAPPING if the code that the hook overwrites or relocates
  * overlaps that of another hook, and MH_ERROR_MEMORY_ALLOC if unable to
  * allocate the trampoline or the hook.
@@ -138,7 +138,7 @@ mh_create_hook_api_ex (const wchar_t* module,
                        void** original,
                        void** target);
 
-/* The same as mh_create_hook_api_ex() with target being NULL.
+/* As above but without returning the function's address.
  */
 LIBMINHOOK_SYMEXPORT enum mh_status
 mh_create_hook_api (const wchar_t* module,
@@ -155,11 +155,11 @@ mh_create_hook_api (const wchar_t* module,
  * status and keep the hook enabled.
  *
  * A retired trampoline stays allocated and executable since a thread may
- * still enter it: through the trampoline pointer that mh_create_hook()
- * stored, by returning from a call that the trampoline made, and so on.
- * Once the caller has established that no thread can, it frees the
- * trampoline with mh_reclaim(). If retired is NULL, then the trampoline
- * stays allocated until the process terminates.
+ * still enter it, for example, through the trampoline pointer that
+ * mh_create_hook() stored or by returning from a call that the trampoline
+ * made. It is the caller's responsibility to establish that no thread can
+ * enter it any longer and to then free it with mh_reclaim(). If retired is
+ * NULL, then the trampoline stays allocated until the process terminates.
  */
 LIBMINHOOK_SYMEXPORT enum mh_status
 mh_remove_hook (void* target, mh_retirement_id* retired);
@@ -169,8 +169,8 @@ mh_remove_hook (void* target, mh_retirement_id* retired);
  * MH_ERROR_NOT_RETIRED if no trampoline with the id is retired.
  *
  * Before freeing the trampoline, suspend the process's other threads and
- * check where they are. If a thread is executing the trampoline, or if we
- * can't suspend a thread or read where it is, then return MH_ERROR_BUSY
+ * check where they are. If a thread is executing the trampoline or if we
+ * cannot suspend a thread or read where it is, then return MH_ERROR_BUSY
  * and leave the trampoline retired. Return MH_ERROR_MEMORY_ALLOC if unable
  * to enumerate the threads, which also leaves it retired.
  *
@@ -178,8 +178,7 @@ mh_remove_hook (void* target, mh_retirement_id* retired);
  * trampoline. For example, a thread that is about to call it through a
  * saved pointer is not executing it yet.
  *
- * Unlike the other functions, this one also works while the library is not
- * initialized.
+ * Note also that this function works while the library is not initialized.
  */
 LIBMINHOOK_SYMEXPORT enum mh_status
 mh_reclaim (mh_retirement_id);
@@ -190,8 +189,9 @@ mh_reclaim (mh_retirement_id);
  * already in that state.
  *
  * Return MH_ERROR_MEMORY_ALLOC if unable to enumerate the process's threads
- * and MH_ERROR_MEMORY_PROTECT if unable to make the target writable. For
- * MH_ALL_HOOKS the hooks before the one that fails stay changed.
+ * and MH_ERROR_MEMORY_PROTECT if unable to make the target writable. If
+ * target is MH_ALL_HOOKS, then the hooks before the one that fails keep
+ * their new state.
  */
 LIBMINHOOK_SYMEXPORT enum mh_status
 mh_enable_hook (void* target);
@@ -203,8 +203,8 @@ mh_disable_hook (void* target);
  * target is MH_ALL_HOOKS, all the hooks. Return MH_ERROR_NOT_CREATED if
  * the target has no hook.
  *
- * Note that queuing only records the state. See mh_apply_queued() for
- * applying it.
+ * Note that this function only records the state, which mh_apply_queued()
+ * then applies.
  */
 LIBMINHOOK_SYMEXPORT enum mh_status
 mh_queue_enable_hook (void* target);
@@ -219,7 +219,7 @@ mh_queue_disable_hook (void* target);
 LIBMINHOOK_SYMEXPORT enum mh_status
 mh_apply_queued (void);
 
-/* Return the status enumerator's name (for example, "MH_ERROR_ENABLED") or
+/* Return the status enumerator's name (e.g., "MH_ERROR_ENABLED") or
  * "(unknown)" if the value is not an enumerator.
  */
 LIBMINHOOK_SYMEXPORT const char*

@@ -44,7 +44,7 @@
 #  define MH_MEMORY_SLOT_SIZE 32
 #endif
 
-/* Size of a page, which is the unit of the memory protection.
+/* Size of a page, the unit of memory protection.
  */
 #define MH_PAGE_SIZE 0x1000
 

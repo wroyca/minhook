@@ -102,8 +102,8 @@ allocate_block (void* address)
 /* Return the closest free region below the address and at or above the
  * minimum or NULL if there is none.
  *
- * We search in the allocation granularity steps since VirtualAlloc() rounds
- * the address of a new allocation down to the granularity.
+ * We search in steps of the allocation granularity since VirtualAlloc()
+ * rounds the address of a new allocation down to the granularity.
  */
 static void*
 find_previous_free_region (void* address, uintptr_t minimum, DWORD granularity)

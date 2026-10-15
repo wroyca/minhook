@@ -66,8 +66,8 @@ mh_farproc_size_check[sizeof (FARPROC) == sizeof (void*) ? 1 : -1];
  * thread is NULL) with the access rights and store its handle in next.
  * Return NO_MORE_THREADS after the last thread.
  *
- * ntdll exports this function since Windows Vista. We declare it ourselves
- * since no Win32 header does.
+ * ntdll has exported this function since Windows Vista. We declare it
+ * ourselves since no Win32 header does.
  */
 NTSYSAPI NTSTATUS NTAPI
 NtGetNextThread (HANDLE process,
@@ -89,8 +89,8 @@ NtGetNextThread (HANDLE process,
   (THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT | THREAD_QUERY_INFORMATION |   \
    THREAD_SET_CONTEXT)
 
-/* Change that is being applied to the hooks. With ACTION_APPLY_QUEUED each
- * hook takes its queued state.
+/* Action to apply to the hooks. With ACTION_APPLY_QUEUED each hook takes
+ * its queued state.
  */
 enum action
 {
@@ -135,8 +135,7 @@ struct frozen_threads
  */
 static volatile LONG locked = FALSE;
 
-/* Library's private heap, which is not NULL while the library is
- * initialized.
+/* Private heap of the library or NULL if the library is not initialized.
  */
 static HANDLE heap = NULL;
 
@@ -150,7 +149,7 @@ static struct
   unsigned int       size;
 } hooks;
 
-/* Trampoline that removing its hook retired (see mh_remove_hook()).
+/* Trampoline retired by the removal of its hook (see mh_remove_hook()).
  */
 struct retirement
 {
@@ -312,7 +311,7 @@ delete_retirement (unsigned int pos)
   }
 }
 
-/* Return the hook's state that the action results in.
+/* Return the state that the action brings the hook into.
  */
 static bool
 target_state (const struct hook_entry* h, enum action a)
@@ -366,10 +365,10 @@ find_new_ip (const struct hook_entry* h, uintptr_t ip)
   return 0;
 }
 
-/* If the suspended thread is within the code that the action on the hooks
- * at the positions from b up to e patches, then move its instruction
- * pointer to the equivalent instruction. Leave the thread where it is if
- * unable to read its context.
+/* If the suspended thread is within the code that the action patches for
+ * the hooks at positions [b, e), then move its instruction pointer to the
+ * equivalent instruction. Leave the thread where it is if unable to read
+ * its context.
  *
  * Note that the hooks must still be in their previous state, that is, call
  * this function after patching their code but before recording their new
@@ -505,7 +504,7 @@ enumerate_threads (struct frozen_threads* ts)
   return false;
 }
 
-/* Suspend the process's other threads, leaving alone those that can't be
+/* Suspend the process's other threads, leaving alone those that cannot be
  * suspended. Return MH_ERROR_MEMORY_ALLOC if unable to enumerate the
  * threads.
  *
@@ -536,9 +535,8 @@ freeze (struct frozen_threads* ts)
   return MH_OK;
 }
 
-/* Move the suspended threads that are within the code that the action on
- * the hooks at the positions from b up to e patches (see
- * process_thread_ips()).
+/* Move the suspended threads that are within the code that the action
+ * patches for the hooks at positions [b, e) (see process_thread_ips()).
  */
 static void
 move_threads (const struct frozen_threads* ts,
@@ -590,9 +588,9 @@ first_page_size (const uint8_t* p, size_t n)
 /* Make the code writable and store the previous protection of each of its
  * pages. Return false if unable to, leaving the protection as it was.
  *
- * VirtualProtect() returns the previous protection of the first page only,
- * so we change one page at a time since the pages may differ. The code that
- * a hook patches is at most 7 bytes long and so spans two pages at most.
+ * VirtualProtect() returns the previous protection of the first page only
+ * and the pages may differ, so we change one page at a time. The code that
+ * a hook patches is at most 7 bytes long and so spans at most two pages.
  */
 static bool
 unprotect (uint8_t* p, size_t n, DWORD protect[2])
@@ -627,11 +625,11 @@ reprotect (uint8_t* p, size_t n, const DWORD protect[2])
 }
 
 /* Write the hook's jump into the target function or restore the original
- * code. Return MH_ERROR_MEMORY_PROTECT if unable to make the code writable.
- * Note that the hook's state stays as is (see set_enabled()).
+ * code, leaving the hook's state as is (see set_enabled()). Return
+ * MH_ERROR_MEMORY_PROTECT if unable to make the code writable.
  *
- * Note that we ignore the failure to restore the protection since the code
- * is patched by then.
+ * Note that we ignore failures to restore the protection since the code is
+ * patched by then.
  */
 static enum mh_status
 patch_hook (unsigned int pos, bool enable)
@@ -688,8 +686,9 @@ set_enabled (struct hook_entry* h, bool enable)
 
 /* Patch the hook with the process's other threads suspended.
  *
- * Note that we move the threads only once the code is patched: if patching
- * fails, then the code stays as it was and so must the threads.
+ * Note that we move the threads only once the code is patched since a
+ * failed patch leaves the code as it was and the threads must then stay
+ * where they are.
  */
 static enum mh_status
 patch_hook_frozen (unsigned int pos, bool enable, enum action a)
@@ -847,8 +846,9 @@ uninitialize (void)
 }
 
 /* Return the start and the end of the code that a hook of the target
- * overwrites or relocates: its jump (into the hot patch area if
- * patch_above is true) and the size of the code in its trampoline.
+ * overwrites or relocates. The code spans the hook's jump (into the hot
+ * patch area if patch_above is true) and the size bytes of the target that
+ * its trampoline relocates.
  */
 static void
 code_range (const void* target,
@@ -878,8 +878,8 @@ code_range (const void* target,
  * code_range()).
  *
  * Two hooks that overwrite the same code would back up each other's jump.
- * And the trampoline of a hook whose code another hook overwrites relocates
- * that hook's jump or jumps back into the middle of it.
+ * Similarly, the trampoline of a hook whose code another hook overwrites
+ * would relocate that hook's jump or return into the middle of it.
  */
 static bool
 overlapping (uintptr_t b, uintptr_t e)
@@ -1022,7 +1022,7 @@ remove_hook (void* target, mh_retirement_id* retired)
 
 /* Return true if the suspended thread may be executing the trampoline or,
  * on x64, its relay, which is in the same slot. A thread that could not be
- * suspended (NULL) or whose context we can't read may be.
+ * suspended (NULL) or whose context we cannot read may be.
  */
 static bool
 executing (HANDLE thread, uintptr_t trampoline)
@@ -1045,8 +1045,8 @@ executing (HANDLE thread, uintptr_t trampoline)
   return trampoline <= ip && ip < trampoline + MH_MEMORY_SLOT_SIZE;
 }
 
-/* Note that this function doesn't need the library initialized: the
- * retirements and the thread list come from the process heap and freeing a
+/* Note that this function doesn't need the library initialized since the
+ * retirement and the thread lists come from the process heap and freeing a
  * trampoline only needs its block.
  */
 static enum mh_status
@@ -1086,9 +1086,9 @@ reclaim (mh_retirement_id id)
   return MH_OK;
 }
 
-/* Note that MinHook processes the threads for enabling in both cases. We
- * process them for the actual change since disabling restores the padding
- * under a thread that is suspended on the long jump in the hot patch area.
+/* Note that we also move the threads when disabling since that restores
+ * the padding under a thread that is suspended on the long jump in the hot
+ * patch area.
  */
 static enum mh_status
 enable_hook (void* target, bool enable)

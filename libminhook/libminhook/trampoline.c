@@ -63,7 +63,7 @@ struct builder
   uint8_t   old_pos;  /* Current instruction offset in the target. */
   uint8_t   new_pos;  /* Current instruction offset in the trampoline. */
   uintptr_t jmp_dest; /* Furthest destination of an internal branch. */
-  uint8_t   dests;    /* Forward internal destinations (offset bits). */
+  uint8_t   dests;    /* Forward internal destinations, a bit per offset. */
   bool      finished; /* Trampoline is complete. */
 
   uint8_t   code[16]; /* Rewritten current instruction. */
@@ -138,17 +138,17 @@ internal (const struct builder* b, uintptr_t dest)
   return t <= dest && dest < t + sizeof (struct mh_jmp_rel);
 }
 
-/* Keep the internal branch at the address to the destination as is. Return
- * false if the trampoline can't keep it.
+/* Keep the internal branch at the address as is. Return false if the
+ * trampoline cannot keep it.
  *
  * The code between such a branch and its destination must keep its length
- * in the trampoline since the branch's offset would be off otherwise. For a
+ * in the trampoline since otherwise the branch's offset would be off. For a
  * forward branch we check this as we relocate that code (see jmp_dest). For
  * a backward branch that code is already relocated, so we compare its
  * length in the target and in the trampoline.
  *
  * Note that the destination must be an instruction boundary since the
- * trampoline may rewrite the instruction that it is in (for example, the
+ * trampoline may rewrite the instruction that contains it (e.g., the
  * displacement of a RIP-relative instruction). We check this for a backward
  * branch here and for a forward one once all the code is relocated (see
  * dests).
@@ -243,7 +243,7 @@ relocate (struct builder* b,
   else if (branch && i->operand_width == 16)
   {
     /* A relative branch with the 16-bit operand size truncates the
-     * instruction pointer to 16 bits, which the rewritten branch can't
+     * instruction pointer to 16 bits, which the rewritten branch cannot
      * reproduce.
      */
     return false;
@@ -263,10 +263,10 @@ relocate (struct builder* b,
     if (i->address_width != 64)
       return false;
 
-    /* The trampoline is within 1 GiB of the target, but the displacement
-     * may move the destination up to another 2 GiB away. So we refuse the
-     * instruction if the destination is out of the reach of the new
-     * displacement.
+    /* The trampoline is within 1 GiB of the target and the displacement
+     * reaches up to 2 GiB further, so the destination may be out of the
+     * reach of the new displacement, in which case we refuse the
+     * instruction.
      */
     intptr_t d = (intptr_t) ((old_address + i->length +
                               (uintptr_t) (intptr_t) i->raw.disp.value) -
@@ -316,9 +316,9 @@ relocate (struct builder* b,
   }
   else if (branch && (jcc (i) || loop (i)))
   {
-    /* Relative jcc or loop (see loop()). We can only keep a loop that stays
-     * within the code that the hook overwrites since it has no form that
-     * reaches further.
+    /* Relative jcc or loop (see loop()). A loop has no form with a longer
+     * reach, so we can keep it only within the code that the hook
+     * overwrites.
      */
     uintptr_t dest = branch_destination (i, old_address);
 
@@ -383,7 +383,7 @@ copy_code (uint8_t* buf, uintptr_t address)
  * in executable memory.
  *
  * Note that the bytes are next to the target function and may extend into
- * the page before or after it, which may be data or not even readable. So
+ * the page before or after it, which may be data or not even readable, so
  * we check the memory before reading it. The bytes span two pages at most,
  * so they are all executable if the first and the last are.
  */
@@ -435,8 +435,8 @@ mh_create_trampoline (struct mh_trampoline* t)
 
     /* Decode the instruction from a copy of the code since the decoder
      * may read up to the maximum instruction length past the address (see
-     * copy_code()). An instruction that doesn't fit into the copy is
-     * refused.
+     * copy_code()). The decoding fails for an instruction that doesn't fit
+     * into the copy.
      */
     uint8_t c[ZYDIS_MAX_INSTRUCTION_LENGTH];
     size_t n = copy_code (c, old_address);
@@ -453,7 +453,7 @@ mh_create_trampoline (struct mh_trampoline* t)
       return false;
 
     /* Within a branch a rewritten instruction must keep its length since
-     * the branch's offsets would change otherwise.
+     * otherwise the branch's offset would change.
      */
     if (old_address < b.jmp_dest && size != i.length)
       return false;
