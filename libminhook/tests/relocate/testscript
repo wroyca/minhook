@@ -146,6 +146,20 @@ $* e8 2b 00 00 00 c3 >>EOO
     restored 7
     removed 7
     EOO
+
+  : backward-growth
+  :
+  : Test that a jump back over an instruction that grows when relocated is
+  : refused since the jump would no longer reach its destination. The
+  : conditional jump is always taken, so the jump back never runs.
+  :
+  $* 31 c0 74 2c eb fa >'create MH_ERROR_UNSUPPORTED_FUNCTION'
+
+  : backward-middle
+  :
+  : Test that a jump back into the middle of an instruction is refused.
+  :
+  $* b0 c3 eb fd >'create MH_ERROR_UNSUPPORTED_FUNCTION'
 }}
 
 : hot-patch
@@ -266,6 +280,26 @@ $* e8 2b 00 00 00 c3 >>EOO
   : branch since the branch would no longer reach its destination.
   :
   $* eb 02 74 2c 31 c0 c3 >'create MH_ERROR_UNSUPPORTED_FUNCTION'
+
+  : internal-backward
+  :
+  : Test a conditional jump back within the code that the hook overwrites
+  : (shr eax, 1 until zero).
+  :
+  $* d1 e8 75 fc c3 >>EOO
+    create MH_OK
+    plain 0
+    hooked 1000
+    restored 0
+    removed 0
+    EOO
+
+  : backward-growth
+  :
+  : Test that a conditional jump back over an instruction that grows when
+  : relocated is refused. As above, the jump back never runs.
+  :
+  $* 31 c0 74 2c 74 fa >'create MH_ERROR_UNSUPPORTED_FUNCTION'
 }}
 
 : loop

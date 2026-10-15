@@ -137,6 +137,45 @@ internal (const struct builder* b, uintptr_t dest)
   return t <= dest && dest < t + sizeof (struct mh_jmp_rel);
 }
 
+/* Keep the internal branch at the address to the destination as is. Return
+ * false if the trampoline can't keep it.
+ *
+ * The code between such a branch and its destination must keep its length
+ * in the trampoline since the branch's offset would be off otherwise. For a
+ * forward branch we check this as we relocate that code (see jmp_dest). For
+ * a backward branch that code is already relocated, so we compare its
+ * length in the target and in the trampoline. Note that this requires the
+ * destination to be an instruction boundary since otherwise we can't tell
+ * where it is in the trampoline.
+ */
+static bool
+keep_branch (struct builder* b, uintptr_t dest, uintptr_t address)
+{
+  if (dest > address)
+  {
+    if (b->jmp_dest < dest)
+      b->jmp_dest = dest;
+
+    return true;
+  }
+
+  const struct mh_trampoline* t = b->trampoline;
+  unsigned int o = (unsigned int) (dest - (uintptr_t) t->target);
+
+  /* A branch to itself has no code in between.
+   */
+  if (o == b->old_pos)
+    return true;
+
+  for (unsigned int i = 0; i < t->ip_count; ++i)
+  {
+    if (t->old_ips[i] == o)
+      return b->new_pos - t->new_ips[i] == b->old_pos - o;
+  }
+
+  return false;
+}
+
 /* Return true if the instruction is jcc (7x or 0F 8x).
  *
  * We go by the opcode since the conditional branch category also includes
@@ -247,8 +286,8 @@ relocate (struct builder* b,
 
     if (internal (b, dest))
     {
-      if (b->jmp_dest < dest)
-        b->jmp_dest = dest;
+      if (!keep_branch (b, dest, old_address))
+        return false;
     }
     else
     {
@@ -270,8 +309,8 @@ relocate (struct builder* b,
 
     if (internal (b, dest))
     {
-      if (b->jmp_dest < dest)
-        b->jmp_dest = dest;
+      if (!keep_branch (b, dest, old_address))
+        return false;
     }
     else if (loop (i))
       return false;
