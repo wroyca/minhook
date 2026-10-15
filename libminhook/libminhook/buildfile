@@ -11,6 +11,10 @@ c.poptions =+ "-I$out_root" "-I$src_root"
 obja{*}: c.poptions += -DLIBMINHOOK_STATIC_BUILD
 objs{*}: c.poptions += -DLIBMINHOOK_SHARED_BUILD
 
+# We enumerate threads with NtGetNextThread(), which only ntdll exports.
+#
+c.libs += ($c.target.system == 'mingw32' ? -lntdll : ntdll.lib)
+
 # Export options.
 #
 lib{minhook}:

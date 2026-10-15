@@ -2,7 +2,6 @@
 #  define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
-#include <tlhelp32.h>
 
 #include <stdio.h>
 #include <stdint.h>
@@ -27,11 +26,9 @@
  * hook-shrink         HeapReAlloc() when shrinking the hook list
  * thread-alloc        HeapAlloc() when collecting the threads
  * thread-grow         HeapReAlloc() when growing the thread list
- * snapshot            CreateToolhelp32Snapshot() when enabling one hook and
- *                     all of them
- * thread-first        Thread32First() when enabling
- * thread-next         Thread32Next() when enabling
- * open-thread         OpenThread() when enabling
+ * next-thread-first   NtGetNextThread() for the first thread when enabling
+ *                     one hook and all of them
+ * next-thread         NtGetNextThread() for a later thread when enabling
  * suspend-thread      SuspendThread() when enabling
  * thread-context      GetThreadContext() when enabling
  * protect-enable      VirtualProtect() when enabling one hook
@@ -40,10 +37,10 @@
  * protect-uninitialize
  *                     VirtualProtect() when uninitializing with an enabled
  *                     hook
- * thread-entry        Thread32Next() returning an entry too short to
- *                     contain the owner process when enabling
- * resume-thread       OpenThread() when resuming a thread after enabling
  * virtual-alloc       VirtualAlloc() when allocating a trampoline block
+ *
+ * After enabling, the scenarios that enable a single hook also print the
+ * number of the thread handles that the library has not closed.
  *
  * The functions a and b return x * 3 + 1 and (x ^ 0x55) - 7, respectively,
  * and their detours add 1000 and 2000 to the result of the original
@@ -118,6 +115,12 @@ static void
 print_result (const char* step, int r)
 {
   printf ("%s %d\n", step, r);
+}
+
+static void
+print_handles (void)
+{
+  printf ("handles %ld\n", fault_thread_handles);
 }
 
 static enum mh_status
@@ -300,21 +303,30 @@ hook_shrink (void)
   code_free (generated);
 }
 
-/* Enable the hook of a with the function failing, then without.
+/* Enable the hook of a with the function failing after the skipped calls,
+ * then without.
  */
 static void
-enable_failing (enum fault_function f, unsigned n)
+enable_failing_after (enum fault_function f, unsigned skips, unsigned n)
 {
   print_status ("initialize", mh_initialize ());
   print_status ("create", create_a ());
-  fault_next (f, n);
+  fault_next_after (f, skips, n);
   print_status ("enable", mh_enable_hook (address (&target_a)));
+  print_handles ();
   print_result ("call", target_a (5));
   fault_next (f, 0);
   print_status ("disable", mh_disable_hook (address (&target_a)));
   print_status ("enable", mh_enable_hook (address (&target_a)));
+  print_handles ();
   print_result ("call", target_a (5));
   print_status ("uninitialize", mh_uninitialize ());
+}
+
+static void
+enable_failing (enum fault_function f, unsigned n)
+{
+  enable_failing_after (f, 0, n);
 }
 
 static void
@@ -336,43 +348,32 @@ thread_grow (void)
 }
 
 static void
-snapshot (void)
+next_thread_first (void)
 {
-  enable_failing (FAULT_SNAPSHOT, 1);
+  enable_failing (FAULT_NEXT_THREAD, 1);
 
   print_status ("initialize", mh_initialize ());
   print_status ("create", create_a ());
-  fault_next (FAULT_SNAPSHOT, 1);
+  fault_next (FAULT_NEXT_THREAD, 1);
   print_status ("enable-all", mh_enable_hook (MH_ALL_HOOKS));
   print_result ("call", target_a (5));
   print_status ("uninitialize", mh_uninitialize ());
 }
 
+/* With the current thread and two others, at least one of the first two
+ * threads is in the list when the third fails.
+ */
 static void
-thread_first (void)
+next_thread (void)
 {
-  enable_failing (FAULT_THREAD_FIRST, 1);
-}
-
-static void
-thread_next (void)
-{
-  start_threads (1);
-  enable_failing (FAULT_THREAD_NEXT, 1);
+  start_threads (2);
+  enable_failing_after (FAULT_NEXT_THREAD, 2, 1);
   stop_threads ();
 }
 
 /* The thread functions fail for every thread, which the engine then
  * leaves alone.
  */
-static void
-open_thread (void)
-{
-  start_threads (1);
-  enable_failing (FAULT_OPEN_THREAD, (unsigned) -1);
-  stop_threads ();
-}
-
 static void
 suspend_thread (void)
 {
@@ -438,44 +439,6 @@ protect_uninitialize (void)
   print_result ("call", target_a (5));
 }
 
-/* The engine skips an entry that doesn't contain the owner process.
- */
-static void
-thread_entry (void)
-{
-  start_threads (1);
-
-  print_status ("initialize", mh_initialize ());
-  print_status ("create", create_a ());
-  fault_short_entry = true;
-  print_status ("enable", mh_enable_hook (address (&target_a)));
-  print_result ("call", target_a (5));
-  print_status ("uninitialize", mh_uninitialize ());
-
-  stop_threads ();
-}
-
-/* Opening the thread succeeds for suspending it and fails for resuming
- * it, so the thread stays suspended and we resume it ourselves.
- */
-static void
-resume_thread (void)
-{
-  start_threads (1);
-
-  print_status ("initialize", mh_initialize ());
-  print_status ("create", create_a ());
-  fault_thread_id = GetThreadId (waiting[0]);
-  fault_next_after (FAULT_OPEN_THREAD, 1, 1);
-  print_status ("enable", mh_enable_hook (address (&target_a)));
-  fault_thread_id = 0;
-  printf ("suspended %lu\n", (unsigned long) ResumeThread (waiting[0]));
-  print_result ("call", target_a (5));
-  print_status ("uninitialize", mh_uninitialize ());
-
-  stop_threads ();
-}
-
 /* On x64 the engine tries the next free region within reach, while on x86
  * it lets the system choose the address and has no alternative.
  */
@@ -501,18 +464,14 @@ static const struct scenario scenarios[] = {
   {"hook-shrink",          &hook_shrink},
   {"thread-alloc",         &thread_alloc},
   {"thread-grow",          &thread_grow},
-  {"snapshot",             &snapshot},
-  {"thread-first",         &thread_first},
-  {"thread-next",          &thread_next},
-  {"open-thread",          &open_thread},
+  {"next-thread-first",    &next_thread_first},
+  {"next-thread",          &next_thread},
   {"suspend-thread",       &suspend_thread},
   {"thread-context",       &thread_context},
   {"protect-enable",       &protect_enable},
   {"protect-all",          &protect_all},
   {"protect-remove",       &protect_remove},
   {"protect-uninitialize", &protect_uninitialize},
-  {"thread-entry",         &thread_entry},
-  {"resume-thread",        &resume_thread},
   {"virtual-alloc",        &virtual_alloc}};
 
 int

@@ -3,7 +3,7 @@
 The `libminhook` C library hooks functions in the current process on
 x86 and x64 Windows. It overwrites the first instructions of a target
 function with a jump to a detour function and builds a trampoline that
-calls the original target function.
+calls the original target function. It requires Windows Vista or later.
 
 The library is derived from [MinHook](https://github.com/TsudaKageyu/minhook)
 1.3.4 by Tsuda Kageyu. Its interface follows MinHook's with lowercase names

@@ -4,9 +4,8 @@
 #  define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
-#include <tlhelp32.h>
+#include <winternl.h> /* NTSTATUS */
 
-#include <stddef.h> /* offsetof */
 #include <stdint.h>
 #include <string.h> /* strcmp(), memcpy() */
 #include <stdbool.h>
@@ -24,6 +23,9 @@
  * function, then fails the number of calls that it requests to fail, the
  * way the function documents, and passes the rest on to the function
  * again.
+ *
+ * We also redirect CloseHandle(), which never fails, to count the thread
+ * handles that the library holds (see fault_thread_handles).
  */
 enum fault_function
 {
@@ -32,12 +34,10 @@ enum fault_function
   FAULT_HEAP_REALLOC,
   FAULT_VIRTUAL_ALLOC,
   FAULT_VIRTUAL_PROTECT,
-  FAULT_SNAPSHOT,
-  FAULT_THREAD_FIRST,
-  FAULT_THREAD_NEXT,
-  FAULT_OPEN_THREAD,
+  FAULT_NEXT_THREAD,
   FAULT_SUSPEND_THREAD,
   FAULT_THREAD_CONTEXT,
+  FAULT_CLOSE_HANDLE,
   FAULT_COUNT
 };
 
@@ -54,14 +54,11 @@ struct fault_import
 
 static struct fault_import fault_imports[FAULT_COUNT];
 
-/* If not 0, then only count the OpenThread() calls for this thread.
+/* Number of the thread handles that NtGetNextThread() returned to the
+ * library and that it has not closed yet. Note that the library closes no
+ * other handles.
  */
-static DWORD fault_thread_id;
-
-/* If true, then the next thread entry that Thread32Next() returns is too
- * short to contain the owner process id.
- */
-static bool fault_short_entry;
+static long fault_thread_handles;
 
 /* Pass the next skips calls to the function on and fail the failures
  * calls after them.
@@ -160,65 +157,21 @@ fault_virtual_protect (LPVOID a, SIZE_T n, DWORD p, PDWORD o)
           fault_imports[FAULT_VIRTUAL_PROTECT].function) (a, n, p, o);
 }
 
-static HANDLE WINAPI
-fault_snapshot (DWORD f, DWORD p)
+static NTSTATUS NTAPI
+fault_next_thread (HANDLE p, HANDLE t, ACCESS_MASK a, ULONG h, ULONG f,
+                   PHANDLE n)
 {
-  if (fault_fail (FAULT_SNAPSHOT))
-  {
-    SetLastError (ERROR_NOT_ENOUGH_MEMORY);
-    return INVALID_HANDLE_VALUE;
-  }
+  if (fault_fail (FAULT_NEXT_THREAD))
+    return (NTSTATUS) 0xC0000022L; /* STATUS_ACCESS_DENIED */
 
-  return ((HANDLE (WINAPI*) (DWORD, DWORD))
-          fault_imports[FAULT_SNAPSHOT].function) (f, p);
-}
+  NTSTATUS r = ((NTSTATUS (NTAPI*) (HANDLE, HANDLE, ACCESS_MASK, ULONG,
+                                    ULONG, PHANDLE))
+                fault_imports[FAULT_NEXT_THREAD].function) (p, t, a, h, f, n);
 
-static BOOL WINAPI
-fault_thread_first (HANDLE s, LPTHREADENTRY32 e)
-{
-  if (fault_fail (FAULT_THREAD_FIRST))
-  {
-    SetLastError (ERROR_ACCESS_DENIED);
-    return FALSE;
-  }
-
-  return ((BOOL (WINAPI*) (HANDLE, LPTHREADENTRY32))
-          fault_imports[FAULT_THREAD_FIRST].function) (s, e);
-}
-
-static BOOL WINAPI
-fault_thread_next (HANDLE s, LPTHREADENTRY32 e)
-{
-  if (fault_fail (FAULT_THREAD_NEXT))
-  {
-    SetLastError (ERROR_ACCESS_DENIED);
-    return FALSE;
-  }
-
-  BOOL r = ((BOOL (WINAPI*) (HANDLE, LPTHREADENTRY32))
-            fault_imports[FAULT_THREAD_NEXT].function) (s, e);
-
-  if (r && fault_short_entry)
-  {
-    e->dwSize = (DWORD) offsetof (THREADENTRY32, th32OwnerProcessID);
-    fault_short_entry = false;
-  }
+  if (r >= 0)
+    fault_thread_handles++;
 
   return r;
-}
-
-static HANDLE WINAPI
-fault_open_thread (DWORD a, BOOL i, DWORD id)
-{
-  if ((fault_thread_id == 0 || id == fault_thread_id) &&
-      fault_fail (FAULT_OPEN_THREAD))
-  {
-    SetLastError (ERROR_ACCESS_DENIED);
-    return NULL;
-  }
-
-  return ((HANDLE (WINAPI*) (DWORD, BOOL, DWORD))
-          fault_imports[FAULT_OPEN_THREAD].function) (a, i, id);
 }
 
 static DWORD WINAPI
@@ -247,18 +200,25 @@ fault_thread_context (HANDLE t, LPCONTEXT c)
           fault_imports[FAULT_THREAD_CONTEXT].function) (t, c);
 }
 
+static BOOL WINAPI
+fault_close_handle (HANDLE h)
+{
+  fault_thread_handles--;
+
+  return ((BOOL (WINAPI*) (HANDLE))
+          fault_imports[FAULT_CLOSE_HANDLE].function) (h);
+}
+
 static struct fault_import fault_imports[FAULT_COUNT] = {
-  {"HeapCreate",               (FARPROC) &fault_heap_create,     NULL, 0, 0},
-  {"HeapAlloc",                (FARPROC) &fault_heap_alloc,      NULL, 0, 0},
-  {"HeapReAlloc",              (FARPROC) &fault_heap_realloc,    NULL, 0, 0},
-  {"VirtualAlloc",             (FARPROC) &fault_virtual_alloc,   NULL, 0, 0},
-  {"VirtualProtect",           (FARPROC) &fault_virtual_protect, NULL, 0, 0},
-  {"CreateToolhelp32Snapshot", (FARPROC) &fault_snapshot,        NULL, 0, 0},
-  {"Thread32First",            (FARPROC) &fault_thread_first,    NULL, 0, 0},
-  {"Thread32Next",             (FARPROC) &fault_thread_next,     NULL, 0, 0},
-  {"OpenThread",               (FARPROC) &fault_open_thread,     NULL, 0, 0},
-  {"SuspendThread",            (FARPROC) &fault_suspend_thread,  NULL, 0, 0},
-  {"GetThreadContext",         (FARPROC) &fault_thread_context,  NULL, 0, 0}};
+  {"HeapCreate",       (FARPROC) &fault_heap_create,     NULL, 0, 0},
+  {"HeapAlloc",        (FARPROC) &fault_heap_alloc,      NULL, 0, 0},
+  {"HeapReAlloc",      (FARPROC) &fault_heap_realloc,    NULL, 0, 0},
+  {"VirtualAlloc",     (FARPROC) &fault_virtual_alloc,   NULL, 0, 0},
+  {"VirtualProtect",   (FARPROC) &fault_virtual_protect, NULL, 0, 0},
+  {"NtGetNextThread",  (FARPROC) &fault_next_thread,     NULL, 0, 0},
+  {"SuspendThread",    (FARPROC) &fault_suspend_thread,  NULL, 0, 0},
+  {"GetThreadContext", (FARPROC) &fault_thread_context,  NULL, 0, 0},
+  {"CloseHandle",      (FARPROC) &fault_close_handle,    NULL, 0, 0}};
 
 /* Redirect the imports of the module that contains the library to the
  * wrappers.

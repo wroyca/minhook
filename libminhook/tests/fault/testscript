@@ -61,9 +61,11 @@ $* thread-alloc >>EOO
   initialize MH_OK
   create MH_OK
   enable MH_ERROR_MEMORY_ALLOC
+  handles 0
   call 16
   disable MH_ERROR_DISABLED
   enable MH_OK
+  handles 0
   call 1016
   uninitialize MH_OK
   EOO
@@ -76,25 +78,29 @@ $* thread-grow >>EOO
   initialize MH_OK
   create MH_OK
   enable MH_ERROR_MEMORY_ALLOC
+  handles 0
   call 16
   disable MH_ERROR_DISABLED
   enable MH_OK
+  handles 0
   call 1016
   uninitialize MH_OK
   EOO
 
-: snapshot
+: next-thread-first
 :
-: Test that enabling one hook and all of them fail without the thread
-: snapshot.
+: Test that enabling one hook and all of them fail if the first thread
+: cannot be opened.
 :
-$* snapshot >>EOO
+$* next-thread-first >>EOO
   initialize MH_OK
   create MH_OK
   enable MH_ERROR_MEMORY_ALLOC
+  handles 0
   call 16
   disable MH_ERROR_DISABLED
   enable MH_OK
+  handles 0
   call 1016
   uninitialize MH_OK
   initialize MH_OK
@@ -104,49 +110,20 @@ $* snapshot >>EOO
   uninitialize MH_OK
   EOO
 
-: thread-first
+: next-thread
 :
-: Test that enabling fails if the snapshot's first thread cannot be
-: read.
+: Test that enabling fails if a later thread cannot be opened and closes
+: the threads opened before it.
 :
-$* thread-first >>EOO
+$* next-thread >>EOO
   initialize MH_OK
   create MH_OK
   enable MH_ERROR_MEMORY_ALLOC
+  handles 0
   call 16
   disable MH_ERROR_DISABLED
   enable MH_OK
-  call 1016
-  uninitialize MH_OK
-  EOO
-
-: thread-next
-:
-: Test that enabling fails if the snapshot's next thread cannot be read.
-:
-$* thread-next >>EOO
-  initialize MH_OK
-  create MH_OK
-  enable MH_ERROR_MEMORY_ALLOC
-  call 16
-  disable MH_ERROR_DISABLED
-  enable MH_OK
-  call 1016
-  uninitialize MH_OK
-  EOO
-
-: open-thread
-:
-: Test that enabling succeeds with threads that cannot be opened, which
-: the engine leaves alone.
-:
-$* open-thread >>EOO
-  initialize MH_OK
-  create MH_OK
-  enable MH_OK
-  call 1016
-  disable MH_OK
-  enable MH_OK
+  handles 0
   call 1016
   uninitialize MH_OK
   EOO
@@ -160,9 +137,11 @@ $* suspend-thread >>EOO
   initialize MH_OK
   create MH_OK
   enable MH_OK
+  handles 0
   call 1016
   disable MH_OK
   enable MH_OK
+  handles 0
   call 1016
   uninitialize MH_OK
   EOO
@@ -176,9 +155,11 @@ $* thread-context >>EOO
   initialize MH_OK
   create MH_OK
   enable MH_OK
+  handles 0
   call 1016
   disable MH_OK
   enable MH_OK
+  handles 0
   call 1016
   uninitialize MH_OK
   EOO
@@ -192,9 +173,11 @@ $* protect-enable >>EOO
   initialize MH_OK
   create MH_OK
   enable MH_ERROR_MEMORY_PROTECT
+  handles 0
   call 16
   disable MH_ERROR_DISABLED
   enable MH_OK
+  handles 0
   call 1016
   uninitialize MH_OK
   EOO
@@ -246,33 +229,6 @@ $* protect-uninitialize >>EOO
   call 1016
   uninitialize MH_OK
   call 16
-  EOO
-
-: thread-entry
-:
-: Test that enabling skips a thread entry that doesn't contain the owner
-: process.
-:
-$* thread-entry >>EOO
-  initialize MH_OK
-  create MH_OK
-  enable MH_OK
-  call 1016
-  uninitialize MH_OK
-  EOO
-
-: resume-thread
-:
-: Test that enabling succeeds if a suspended thread cannot be opened for
-: resuming, which then stays suspended.
-:
-$* resume-thread >>EOO
-  initialize MH_OK
-  create MH_OK
-  enable MH_OK
-  suspended 1
-  call 1016
-  uninitialize MH_OK
   EOO
 
 : virtual-alloc

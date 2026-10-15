@@ -29,7 +29,7 @@
 #include <libminhook/minhook.h>
 
 #include <windows.h>
-#include <tlhelp32.h>
+#include <winternl.h> /* NTSTATUS, NT_SUCCESS() */
 
 #include <limits.h> /* UINT_MAX */
 #include <stdint.h>
@@ -56,6 +56,23 @@ mh_farproc_size_check[sizeof (FARPROC) == sizeof (void*) ? 1 : -1];
  */
 #define INVALID_HOOK_POS UINT_MAX
 #define ALL_HOOKS_POS    UINT_MAX
+
+/* Return the handle of the process's thread that follows the thread (the
+ * first thread if NULL) with the access rights. ntdll exports this function
+ * since Windows Vista and no Win32 header declares it.
+ */
+NTSYSAPI NTSTATUS NTAPI
+NtGetNextThread (HANDLE process,
+                 HANDLE thread,
+                 ACCESS_MASK access,
+                 ULONG attributes,
+                 ULONG flags,
+                 PHANDLE next);
+
+/* The status that NtGetNextThread() returns after the last thread
+ * (STATUS_NO_MORE_ENTRIES).
+ */
+#define NO_MORE_THREADS ((NTSTATUS) 0x8000001AL)
 
 /* Access rights for suspending and resuming threads.
  */
@@ -88,12 +105,12 @@ struct hook_entry
   uint8_t new_ips[8]; /* Boundaries in the trampoline. */
 };
 
-/* Threads that are suspended while the hooks are patched. A zero id is a
- * thread that could not be suspended.
+/* Threads that are suspended while the hooks are patched. A NULL handle is
+ * a thread that could not be suspended.
  */
 struct frozen_threads
 {
-  DWORD*       items;
+  HANDLE*      items;
   unsigned int capacity;
   unsigned int size;
 };
@@ -282,15 +299,15 @@ process_thread_ips (HANDLE thread, unsigned int pos, enum action a)
   }
 }
 
-/* Append the thread id. Return false if unable to allocate.
+/* Append the thread handle. Return false if unable to allocate.
  */
 static bool
-append_thread (struct frozen_threads* ts, DWORD id)
+append_thread (struct frozen_threads* ts, HANDLE thread)
 {
   if (ts->items == NULL)
   {
     ts->capacity = INITIAL_THREAD_CAPACITY;
-    ts->items = (DWORD*) HeapAlloc (heap, 0, ts->capacity * sizeof (DWORD));
+    ts->items = (HANDLE*) HeapAlloc (heap, 0, ts->capacity * sizeof (HANDLE));
 
     if (ts->items == NULL)
       return false;
@@ -299,8 +316,8 @@ append_thread (struct frozen_threads* ts, DWORD id)
   {
     ts->capacity *= 2;
 
-    DWORD* p = (DWORD*) HeapReAlloc (
-      heap, 0, ts->items, ts->capacity * sizeof (DWORD));
+    HANDLE* p = (HANDLE*) HeapReAlloc (
+      heap, 0, ts->items, ts->capacity * sizeof (HANDLE));
 
     if (p == NULL)
       return false;
@@ -308,64 +325,69 @@ append_thread (struct frozen_threads* ts, DWORD id)
     ts->items = p;
   }
 
-  ts->items[ts->size++] = id;
+  ts->items[ts->size++] = thread;
   return true;
 }
 
-/* Append the ids of the process's threads, other than the current one,
- * from the snapshot.
+/* Append the handles of the process's threads other than the current one.
+ * Return false if unable to.
+ *
+ * NtGetNextThread() walks only the process's own threads and opens each of
+ * them for us.
  */
 static bool
-collect_threads (HANDLE snapshot, struct frozen_threads* ts)
+collect_threads (struct frozen_threads* ts)
 {
-  THREADENTRY32 e;
-  e.dwSize = sizeof (e);
+  DWORD self = GetCurrentThreadId ();
+  HANDLE p = NULL; /* Previous thread. */
+  HANDLE c = NULL; /* Current thread, which we close once past it. */
 
-  if (!Thread32First (snapshot, &e))
-    return false;
-
-  DWORD process = GetCurrentProcessId ();
-  DWORD thread = GetCurrentThreadId ();
-
-  do
+  for (;;)
   {
-    if (e.dwSize >= FIELD_OFFSET (THREADENTRY32, th32OwnerProcessID) +
-                    sizeof (DWORD) &&
-        e.th32OwnerProcessID == process &&
-        e.th32ThreadID != thread)
+    HANDLE t;
+    NTSTATUS s = NtGetNextThread (
+      GetCurrentProcess (), p, THREAD_ACCESS, 0, 0, &t);
+
+    if (c != NULL)
     {
-      if (!append_thread (ts, e.th32ThreadID))
-        return false;
+      CloseHandle (c);
+      c = NULL;
     }
 
-    e.dwSize = sizeof (e);
-  }
-  while (Thread32Next (snapshot, &e));
+    if (!NT_SUCCESS (s))
+      return s == NO_MORE_THREADS;
 
-  return GetLastError () == ERROR_NO_MORE_FILES;
+    if (GetThreadId (t) == self)
+      c = t;
+    else if (!append_thread (ts, t))
+    {
+      CloseHandle (t);
+      return false;
+    }
+
+    p = t;
+  }
 }
 
-/* Collect the ids of the process's threads other than the current one.
+/* Collect the handles of the process's threads other than the current one.
  * Return false if unable to.
  */
 static bool
 enumerate_threads (struct frozen_threads* ts)
 {
-  HANDLE s = CreateToolhelp32Snapshot (TH32CS_SNAPTHREAD, 0);
+  if (collect_threads (ts))
+    return true;
 
-  if (s == INVALID_HANDLE_VALUE)
-    return false;
+  for (unsigned int i = 0; i < ts->size; ++i)
+    CloseHandle (ts->items[i]);
 
-  bool r = collect_threads (s, ts);
-
-  if (!r && ts->items != NULL)
+  if (ts->items != NULL)
   {
     HeapFree (heap, 0, ts->items);
     ts->items = NULL;
   }
 
-  CloseHandle (s);
-  return r;
+  return false;
 }
 
 /* Suspend the process's other threads and move those that are within the
@@ -383,22 +405,15 @@ freeze (struct frozen_threads* ts, unsigned int pos, enum action a)
 
   for (unsigned int i = 0; i < ts->size; ++i)
   {
-    bool suspended = false;
-    HANDLE t = OpenThread (THREAD_ACCESS, FALSE, ts->items[i]);
+    HANDLE t = ts->items[i];
 
-    if (t != NULL)
+    if (SuspendThread (t) != 0xFFFFFFFF)
+      process_thread_ips (t, pos, a);
+    else
     {
-      if (SuspendThread (t) != 0xFFFFFFFF)
-      {
-        suspended = true;
-        process_thread_ips (t, pos, a);
-      }
-
       CloseHandle (t);
+      ts->items[i] = NULL;
     }
-
-    if (!suspended)
-      ts->items[i] = 0;
   }
 
   return MH_OK;
@@ -412,16 +427,13 @@ unfreeze (struct frozen_threads* ts)
 
   for (unsigned int i = 0; i < ts->size; ++i)
   {
-    if (ts->items[i] == 0)
+    HANDLE t = ts->items[i];
+
+    if (t == NULL)
       continue;
 
-    HANDLE t = OpenThread (THREAD_ACCESS, FALSE, ts->items[i]);
-
-    if (t != NULL)
-    {
-      ResumeThread (t);
-      CloseHandle (t);
-    }
+    ResumeThread (t);
+    CloseHandle (t);
   }
 
   HeapFree (heap, 0, ts->items);
