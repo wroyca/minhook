@@ -322,10 +322,18 @@ mh_create_trampoline (struct mh_trampoline* t)
   t->ip_count = 0;
 
   /* The decoder only refuses an invalid combination of the machine mode and
-   * the stack width.
+   * the stack width and an invalid decoder mode.
+   *
+   * The minimal decoder mode skips the semantic analysis and still fills
+   * everything that we use: the length, the mnemonic, the opcode and its
+   * map, the effective operand size and address width, the ModR/M
+   * attribute, and the raw fields.
    */
   ZydisDecoder d;
   ZyanStatus s = ZydisDecoderInit (&d, MACHINE_MODE, STACK_WIDTH);
+  assert (ZYAN_SUCCESS (s));
+
+  s = ZydisDecoderEnableMode (&d, ZYDIS_DECODER_MODE_MINIMAL, ZYAN_TRUE);
   assert (ZYAN_SUCCESS (s));
   (void) s;
 
