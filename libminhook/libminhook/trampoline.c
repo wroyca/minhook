@@ -257,12 +257,21 @@ relocate (struct builder* b,
     if (i->address_width != 64)
       return false;
 
-    uint32_t d = (uint32_t) ((old_address + i->length +
+    /* The trampoline is within 1 GiB of the target, but the displacement
+     * may move the destination up to another 2 GiB away. So we refuse the
+     * instruction if the destination is out of the reach of the new
+     * displacement.
+     */
+    intptr_t d = (intptr_t) ((old_address + i->length +
                               (uintptr_t) (intptr_t) i->raw.disp.value) -
                              (new_address + i->length));
 
+    if (d < INT32_MIN || d > INT32_MAX)
+      return false;
+
     memcpy (b->code, (const void*) old_address, *size);
-    memcpy (b->code + i->raw.disp.offset, &d, sizeof (d));
+    int32_t v = (int32_t) d;
+    memcpy (b->code + i->raw.disp.offset, &v, sizeof (v));
     *code = b->code;
 
     /* An indirect jmp completes the function.

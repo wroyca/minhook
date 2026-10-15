@@ -23,12 +23,15 @@
  * below-retry  as below with the first trampoline block allocation failing
  * reserved     hook the far function with the address space around it
  *              reserved
+ * rip-relative hook the far function with the address space below it
+ *              reserved and code that reads from 2 GiB below it
  * low          hook a function one allocation granule above the first
  *              1 GiB of the address space
  * high         hook a function within 1 GiB of the end of the address space
  *
- * The target functions are mov eax, 42; ret and their detours add 1000 to
- * the result of the original function. The below scenarios also print
+ * The target functions are mov eax, 42; ret, except in rip-relative where
+ * it is mov eax, [rip-0x7ffffff0]; ret, and their detours add 1000 to the
+ * result of the original function. The below scenarios also print
  * whether the trampoline is above the target.
  */
 
@@ -78,11 +81,14 @@ call (void* p)
 
 static const uint8_t function_code[] = {0xB8, 0x2A, 0x00, 0x00, 0x00, 0xC3};
 
-/* Allocate a page with the function at the first free address from 16 TiB
- * up in 1 TiB steps, which is far from the other code of the process.
+static const uint8_t rip_relative_code[] = {
+  0x8B, 0x05, 0x10, 0x00, 0x00, 0x80, 0xC3};
+
+/* Allocate a page with the code at the first free address from 16 TiB up in
+ * 1 TiB steps, which is far from the other code of the process.
  */
 static uint8_t*
-allocate_far (void)
+allocate_far_code (const uint8_t* code, size_t n)
 {
   for (uintptr_t a = (uintptr_t) 1 << 44; a < (uintptr_t) 1 << 47;
        a += (uintptr_t) 1 << 40)
@@ -94,13 +100,19 @@ allocate_far (void)
     if (p != NULL)
     {
       memset (p, 0xCC, CODE_PAGE_SIZE);
-      memcpy (p, function_code, sizeof (function_code));
+      memcpy (p, code, n);
       return p;
     }
   }
 
   assert (0);
   return NULL;
+}
+
+static uint8_t*
+allocate_far (void)
+{
+  return allocate_far_code (function_code, sizeof (function_code));
 }
 
 /* Reservations of the free address space.
@@ -216,6 +228,29 @@ hook_below_retry (void)
   below (true);
 }
 
+/* The trampoline is above the target, so the code's destination is out of
+ * the reach of the relocated displacement. Note that the code never runs.
+ */
+static void
+hook_rip_relative (void)
+{
+  uint8_t* f = allocate_far_code (rip_relative_code,
+                                  sizeof (rip_relative_code));
+  uintptr_t o = (uintptr_t) f;
+
+  reserve (o - RANGE - GRANULARITY, o);
+
+  print_status ("initialize", mh_initialize ());
+  print_status ("create",
+                mh_create_hook (f,
+                                address (&detour_far),
+                                (void**) &original_far));
+  print_status ("uninitialize", mh_uninitialize ());
+
+  release ();
+  VirtualFree (f, 0, MEM_RELEASE);
+}
+
 static void
 hook_reserved (void)
 {
@@ -312,13 +347,14 @@ struct scenario
 };
 
 static const struct scenario scenarios[] = {
-  {"far",         &hook_far},
-  {"far-first",   &hook_far_first},
-  {"below",       &hook_below},
-  {"below-retry", &hook_below_retry},
-  {"reserved",    &hook_reserved},
-  {"low",         &hook_low},
-  {"high",        &hook_high}};
+  {"far",          &hook_far},
+  {"far-first",    &hook_far_first},
+  {"below",        &hook_below},
+  {"below-retry",  &hook_below_retry},
+  {"rip-relative", &hook_rip_relative},
+  {"reserved",     &hook_reserved},
+  {"low",          &hook_low},
+  {"high",         &hook_high}};
 
 int
 main (int argc, char* argv[])

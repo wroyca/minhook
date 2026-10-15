@@ -59,6 +59,17 @@ $* below-retry >>EOO
   uninitialize MH_OK
   EOO
 
+: rip-relative
+:
+: Test that a RIP-relative instruction whose displacement no longer fits
+: into 32 bits for the trampoline is refused.
+:
+$* rip-relative >>EOO
+  initialize MH_OK
+  create MH_ERROR_UNSUPPORTED_FUNCTION
+  uninitialize MH_OK
+  EOO
+
 : reserved
 :
 : Test that a target without room for a trampoline within reach is
