@@ -84,7 +84,7 @@ typedef uint64_t mh_retirement_id;
  *
  * Note also that the library never frees a trampoline on its own since it
  * cannot tell whether some thread may still enter it. See mh_remove_hook()
- * and mh_reclaim() for details.
+ * and mh_reclaim_trampoline() for details.
  */
 
 /* Initialize the library. Return MH_ERROR_ALREADY_INITIALIZED if it is
@@ -158,8 +158,9 @@ mh_create_hook_api (const wchar_t* module,
  * still enter it, for example, through the trampoline pointer that
  * mh_create_hook() stored or by returning from a call that the trampoline
  * made. It is the caller's responsibility to establish that no thread can
- * enter it any longer and to then free it with mh_reclaim(). If retired is
- * NULL, then the trampoline stays allocated until the process terminates.
+ * enter it any longer and to then free it with mh_reclaim_trampoline(). If
+ * retired is NULL, then the trampoline stays allocated until the process
+ * terminates.
  */
 LIBMINHOOK_SYMEXPORT enum mh_status
 mh_remove_hook (void* target, mh_retirement_id* retired);
@@ -181,7 +182,7 @@ mh_remove_hook (void* target, mh_retirement_id* retired);
  * Note also that this function works while the library is not initialized.
  */
 LIBMINHOOK_SYMEXPORT enum mh_status
-mh_reclaim (mh_retirement_id);
+mh_reclaim_trampoline (mh_retirement_id);
 
 /* Enable or disable the hook of the target function or, if target is
  * MH_ALL_HOOKS, all the hooks. Return MH_ERROR_NOT_CREATED if the target

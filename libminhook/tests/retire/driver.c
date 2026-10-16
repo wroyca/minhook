@@ -121,9 +121,9 @@ reclaim (void)
   printf ("id %llu\n", (unsigned long long) id);
   printf ("call %d\n", call (p + TARGET_OFFSET));
   print_allocated (tramp);
-  print_status ("reclaim", mh_reclaim (id));
+  print_status ("reclaim", mh_reclaim_trampoline (id));
   print_allocated (tramp);
-  print_status ("reclaim", mh_reclaim (id));
+  print_status ("reclaim", mh_reclaim_trampoline (id));
   print_status ("uninitialize", mh_uninitialize ());
 
   code_free (p);
@@ -146,8 +146,8 @@ repeat (void)
     printf ("id %llu\n", (unsigned long long) ids[i]);
   }
 
-  print_status ("reclaim", mh_reclaim (ids[0]));
-  print_status ("reclaim", mh_reclaim (ids[1]));
+  print_status ("reclaim", mh_reclaim_trampoline (ids[0]));
+  print_status ("reclaim", mh_reclaim_trampoline (ids[1]));
   print_allocated (trampolines[0]);
   print_allocated (trampolines[1]);
   print_status ("uninitialize", mh_uninitialize ());
@@ -158,8 +158,8 @@ repeat (void)
 static void
 unknown (void)
 {
-  print_status ("reclaim", mh_reclaim (0));
-  print_status ("reclaim", mh_reclaim (1));
+  print_status ("reclaim", mh_reclaim_trampoline (0));
+  print_status ("reclaim", mh_reclaim_trampoline (1));
 }
 
 static void
@@ -203,7 +203,7 @@ uninitialized (void)
   print_status ("create", create (p));
   print_status ("remove", mh_remove_hook (p + TARGET_OFFSET, &id));
   print_status ("uninitialize", mh_uninitialize ());
-  print_status ("reclaim", mh_reclaim (id));
+  print_status ("reclaim", mh_reclaim_trampoline (id));
   print_allocated (tramp);
 
   code_free (p);
@@ -283,7 +283,7 @@ call_retired (void)
   printf ("call %d\n", (int) r);
 
   CloseHandle (t);
-  print_status ("reclaim", mh_reclaim (id));
+  print_status ("reclaim", mh_reclaim_trampoline (id));
   print_status ("uninitialize", mh_uninitialize ());
 
   CloseHandle (released);
@@ -370,14 +370,14 @@ busy (void)
   }
 
   print_status ("remove", mh_remove_hook (p + TARGET_OFFSET, &id));
-  print_status ("reclaim", mh_reclaim (id));
+  print_status ("reclaim", mh_reclaim_trampoline (id));
   print_allocated (tramp);
 
   SuspendThread (t);
   set_thread_ip (t, (uintptr_t) p + PARK_OFFSET);
   ResumeThread (t);
 
-  print_status ("reclaim", mh_reclaim (id));
+  print_status ("reclaim", mh_reclaim_trampoline (id));
   print_allocated (tramp);
 
   BOOL r = TerminateThread (t, 0);

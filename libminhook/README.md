@@ -57,9 +57,10 @@ Trampolines and hooks:
 * `mh_remove_hook()` retires the hook's trampoline and keeps it allocated,
   since a thread may still enter it (for example, by returning from a call
   that the trampoline made). Its second argument receives the trampoline's
-  identifier, which `mh_reclaim()` takes to free it once no thread can enter
-  it. `mh_reclaim()` returns `MH_ERROR_BUSY` if a thread is executing the
-  trampoline and `MH_ERROR_NOT_RETIRED` for an unknown identifier.
+  identifier, which `mh_reclaim_trampoline()` takes to free it once no
+  thread can enter it. `mh_reclaim_trampoline()` returns `MH_ERROR_BUSY` if
+  a thread is executing the trampoline and `MH_ERROR_NOT_RETIRED` for an
+  unknown identifier.
 
 * `mh_uninitialize()` keeps the trampolines of the remaining hooks allocated
   for the same reason.

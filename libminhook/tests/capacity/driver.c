@@ -133,7 +133,7 @@ main (int argc, char* argv[])
   c = 0;
   for (size_t i = 0; i != n; ++i)
   {
-    if (mh_reclaim (ids[i]) == MH_OK)
+    if (mh_reclaim_trampoline (ids[i]) == MH_OK)
       ++c;
   }
   printf ("reclaimed %zu\n", c);

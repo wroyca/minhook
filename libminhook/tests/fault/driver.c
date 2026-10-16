@@ -522,7 +522,7 @@ retire_alloc (void)
   print_result ("call", target_a (5));
   print_status ("remove", mh_remove_hook (address (&target_a), &id));
   print_result ("call", target_a (5));
-  print_status ("reclaim", mh_reclaim (id));
+  print_status ("reclaim", mh_reclaim_trampoline (id));
   print_status ("uninitialize", mh_uninitialize ());
 }
 
@@ -558,7 +558,7 @@ retire_grow (void)
   size_t c = 0;
   for (size_t i = 0; i != n + 1; ++i)
   {
-    if (mh_reclaim (ids[i]) == MH_OK)
+    if (mh_reclaim_trampoline (ids[i]) == MH_OK)
       ++c;
   }
 
@@ -580,10 +580,10 @@ reclaim_failing (enum fault_function f, unsigned n)
   print_status ("create", create_a ());
   print_status ("remove", mh_remove_hook (address (&target_a), &id));
   fault_next (f, n);
-  print_status ("reclaim", mh_reclaim (id));
+  print_status ("reclaim", mh_reclaim_trampoline (id));
   print_handles ();
   fault_next (f, 0);
-  print_status ("reclaim", mh_reclaim (id));
+  print_status ("reclaim", mh_reclaim_trampoline (id));
   print_handles ();
   print_status ("uninitialize", mh_uninitialize ());
 
@@ -657,7 +657,7 @@ reclaim_heap (void)
   print_status ("remove", mh_remove_hook (address (&target_a), &id));
 
   fault_before_suspend = &lock_heap_before_suspend;
-  enum mh_status s = mh_reclaim (id);
+  enum mh_status s = mh_reclaim_trampoline (id);
   fault_before_suspend = NULL;
 
   print_status ("reclaim", s);

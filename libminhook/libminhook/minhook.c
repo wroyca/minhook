@@ -121,8 +121,9 @@ struct hook_entry
 /* Threads that are suspended while the hooks are patched or a trampoline
  * is reclaimed. A NULL handle is a thread that could not be suspended.
  *
- * Note that the list comes from the process heap since mh_reclaim() also
- * suspends the threads while the library is not initialized.
+ * Note that the list comes from the process heap since
+ * mh_reclaim_trampoline() also suspends the threads while the library is
+ * not initialized.
  */
 struct frozen_threads
 {
@@ -161,7 +162,7 @@ struct retirement
  * reclaiming one moves the last into its place.
  *
  * Note that the list comes from the process heap since it outlives the
- * library's heap (see mh_reclaim()).
+ * library's heap (see mh_reclaim_trampoline()).
  */
 static struct
 {
@@ -1181,7 +1182,7 @@ mh_remove_hook (void* target, mh_retirement_id* retired)
 }
 
 enum mh_status
-mh_reclaim (mh_retirement_id id)
+mh_reclaim_trampoline (mh_retirement_id id)
 {
   lock ();
   enum mh_status r = reclaim (id);
