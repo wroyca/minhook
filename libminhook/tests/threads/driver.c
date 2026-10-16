@@ -377,6 +377,11 @@ hot_patch (void)
 
   print_status ("remove", mh_remove_hook (target, NULL));
   print_location ("remove", t, target, tramp);
+
+  /* As above, return the thread to its loop. Otherwise it would exit while
+   * we terminate it, which can leave the loader's locks held.
+   */
+  set_thread_ip (t, (uintptr_t) p + DETOUR_OFFSET);
   ResumeThread (t);
 
   stop_spinning (t);
